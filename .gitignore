@@ -1,0 +1,9 @@
+# Build output and release packages
+build/
+.build/
+dist/
+
+# macOS / editors
+.DS_Store
+*.xcuserstate
+.swiftpm/
