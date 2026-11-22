@@ -28,7 +28,8 @@ struct MouseStudioApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        // Menu bar only: no Dock icon. The window is opened from the menu bar icon.
+        NSApp.setActivationPolicy(.accessory)
         NSApp.activate(ignoringOtherApps: true)
         shrinkWindowOnce()
     }
