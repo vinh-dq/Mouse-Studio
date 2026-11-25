@@ -10,6 +10,7 @@ struct AppConfig: Codable, Equatable, Sendable {
     var scroll = ScrollSettings.recommended
     var wheel = WheelSettings.recommended
     var swipe = SwipeSettings.recommended
+    var windowFinder = WindowFinderSettings()
     /// Turn off to stop using undocumented macOS features (smooth pinch zoom, interactive Spaces swipe); zoom then
     /// uses ⌘+ / ⌘− and Spaces use their keyboard shortcuts.
     var usePrivateFeatures = true
@@ -41,6 +42,7 @@ struct AppConfig: Codable, Equatable, Sendable {
         scroll = try container.decodeIfPresent(ScrollSettings.self, forKey: .scroll) ?? ScrollSettings()
         wheel = try container.decodeIfPresent(WheelSettings.self, forKey: .wheel) ?? WheelSettings()
         swipe = try container.decodeIfPresent(SwipeSettings.self, forKey: .swipe) ?? SwipeSettings()
+        windowFinder = (try? container.decodeIfPresent(WindowFinderSettings.self, forKey: .windowFinder)) ?? WindowFinderSettings()
         usePrivateFeatures = try container.decodeIfPresent(Bool.self, forKey: .usePrivateFeatures) ?? true
         excludedApps = (try container.decodeIfPresent([Lossy<ExcludedApp>].self, forKey: .excludedApps) ?? []).compactMap(\.value)
         devices = (try container.decodeIfPresent([Lossy<DeviceProfile>].self, forKey: .devices) ?? []).compactMap(\.value)
@@ -63,6 +65,7 @@ struct AppConfig: Codable, Equatable, Sendable {
         copy.scroll = scroll.clamped()
         copy.wheel = wheel.clamped()
         copy.swipe = swipe.clamped()
+        copy.windowFinder = windowFinder.clamped()
         var seenApps = Set<String>()
         copy.excludedApps = excludedApps.filter { !$0.bundleID.isEmpty && seenApps.insert($0.bundleID).inserted }
         var seenDevices = Set<String>()

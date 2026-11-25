@@ -49,6 +49,8 @@ enum ActionExecutor {
             try openURL(text)
         case .runScript(let command):
             try runScript(command)
+        case .findWindow:
+            DispatchQueue.main.async { MainActor.assumeIsolated { WindowFinder.shared.toggle() } }
         }
     }
 

@@ -130,7 +130,7 @@ struct ActionChoice: Identifiable {
             [
                 Section(title: "Mouse", choices: [ActionChoice(.mouseButton(.middle)), ActionChoice(.none)]),
                 Section(title: "Navigate", choices: system([.back, .forward, .spaceLeft, .spaceRight])),
-                Section(title: "macOS", choices: system([.missionControl, .appExpose, .showDesktop, .launchpad, .previousApp, .minimizeWindow, .closeWindow])),
+                Section(title: "macOS", choices: system([.missionControl, .appExpose, .showDesktop, .launchpad, .previousApp, .minimizeWindow, .closeWindow]) + [ActionChoice(.findWindow)]),
                 Section(title: "Media", choices: system([.volumeUp, .volumeDown, .mute, .playPause, .nextTrack, .previousTrack])),
                 Section(title: "Custom", choices: custom),
             ]

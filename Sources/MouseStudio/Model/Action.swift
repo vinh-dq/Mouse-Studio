@@ -69,6 +69,7 @@ enum Action: Hashable, Codable, Sendable {
     case openApp(path: String)
     case openURL(String)
     case runScript(String)
+    case findWindow
     // Continuous actions
     case dragScroll
     case swipeGesture
@@ -84,6 +85,7 @@ enum Action: Hashable, Codable, Sendable {
         case .openApp(let path): Self.appName(path)
         case .openURL(let url): url
         case .runScript: String(localized: "Run Script")
+        case .findWindow: String(localized: "Find Window")
         case .dragScroll: String(localized: "Drag Scroll")
         case .swipeGesture: String(localized: "Spaces & Mission Control")
         case .scrollZoom: String(localized: "Zoom In or Out")
@@ -100,6 +102,7 @@ enum Action: Hashable, Codable, Sendable {
         case .openApp: "app"
         case .openURL: "link"
         case .runScript: "terminal"
+        case .findWindow: "macwindow.on.rectangle"
         case .dragScroll: "arrow.up.and.down.and.arrow.left.and.right"
         case .swipeGesture: "rectangle.3.group"
         case .scrollZoom: "plus.magnifyingglass"
