@@ -140,7 +140,10 @@ Mức di chuyển của Spaces ứng với mỗi đoạn kéo chuột. Càng th�
 <br clear="all">
 
 ### Cửa sổ
+<img src="docs/images/vi/windows.png" width="440" align="right" alt="Tab Cửa sổ">
+
 Giữ **Option bên phải** (hoặc Option trái, Command phải, Control phải) khoảng một phần tư giây, danh sách kính các cửa sổ đang mở sẽ hiện ra.
+Hoặc ghi một **phím tắt** để mở danh sách và giữ nguyên: gõ để tìm, nhấn ↩ để chuyển, esc để đóng.
 Gõ một phần tên ứng dụng hoặc tiêu đề (không cần dấu: `cua so` tìm ra “Cửa sổ”), rồi thả phím để chuyển.
 Nhấn nhanh, hoặc nhấn phím khác sớm hơn, thì phím vẫn thuộc về ứng dụng của bạn.
 
@@ -157,6 +160,15 @@ Thả phím chỉ chuyển cửa sổ khi bạn đã gõ, đã chọn hoặc đa
 Ảnh xem trước cần quyền **Ghi màn hình**; không có quyền này, danh sách hiện biểu tượng ứng dụng. Mouse Studio chỉ đọc tiêu đề
 và chụp ảnh khi danh sách đang mở. Cửa sổ ở màn hình nền khác chỉ hiện khi đã cho phép Ghi màn hình.
 Bạn cũng có thể mở danh sách bằng một nút chuột bất kỳ: thêm cử chỉ và chọn **Tìm cửa sổ**.
+
+<br clear="all">
+
+<img src="docs/images/vi/finder-search.png" width="640" alt="Danh sách cửa sổ, đã lọc theo chữ gõ">
+
+Mỗi cửa sổ cho biết nó nằm ở màn hình nền (và màn hình) nào. Chữ bạn gõ được tô nổi, và cửa sổ bạn hay chọn cho một cụm chữ sẽ lên đầu ở lần sau (tắt bằng **Nhớ lựa chọn của tôi**).
+Trong tab, mục **Giao diện** cho chọn danh sách kèm ảnh lớn của cửa sổ đang chọn, hoặc dạng thẻ.
+
+<img src="docs/images/vi/finder-cards.png" width="640" alt="Danh sách cửa sổ dạng thẻ">
 
 ### Ứng dụng
 <img src="docs/images/vi/apps.png" width="440" align="right" alt="Tab Ứng dụng">

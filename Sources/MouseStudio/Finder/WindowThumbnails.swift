@@ -5,7 +5,7 @@ import ScreenCaptureKit
 /// Pictures of windows, taken only while the list is open. Needs the Screen Recording permission.
 @MainActor
 final class WindowThumbnailer {
-    static var hasAccess: Bool { CGPreflightScreenCaptureAccess() }
+    static var hasAccess: Bool { FinderDemo.isActive || CGPreflightScreenCaptureAccess() }
 
     static func requestAccess() {
         _ = CGRequestScreenCaptureAccess()

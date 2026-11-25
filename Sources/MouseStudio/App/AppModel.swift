@@ -4,7 +4,8 @@ import Combine
 /// The app-level state the UI reads: configuration, permission, and whether the mouse monitor is running.
 @MainActor
 final class AppModel: ObservableObject {
-    static let shared = AppModel()
+    /// A demo copy (screenshots) keeps its settings in a throw-away folder and leaves the real ones alone.
+    static let shared = AppModel(store: FinderDemo.isActive ? ConfigStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("MouseStudioDemo")) : nil)
 
     enum Status: Equatable {
         case off
@@ -52,6 +53,8 @@ final class AppModel: ObservableObject {
             .sink { [weak self] config in self?.configChanged(config) }
             .store(in: &cancellables)
 
+        // A demo copy (screenshots) never touches the mouse or the permission prompts.
+        guard !FinderDemo.isActive else { return }
         observeSystemEvents()
         reconcile()
         promptForPermissionOnFirstLaunch()
@@ -79,6 +82,7 @@ final class AppModel: ObservableObject {
     /// `store.config` holds it, so reading the store at that moment gives the previous setting (the switch and the
     /// status then disagreed by one toggle).
     func reconcile(enabled: Bool? = nil) {
+        defer { WindowFinder.shared.setEventFallback(!engine.isRunning) }
         permissions.refresh()
         guard enabled ?? store.config.isEnabled else {
             engine.stop()
@@ -119,6 +123,9 @@ final class AppModel: ObservableObject {
 
         Recent events (seconds since launch):
         \(engine.trace.dump())
+
+        Window finder:
+        \(FinderLog.shared.dump())
         """
     }
 

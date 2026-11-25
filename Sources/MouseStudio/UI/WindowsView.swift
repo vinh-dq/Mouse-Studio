@@ -18,6 +18,17 @@ struct WindowsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             }
 
+            SettingsGroup(title: "Look") {
+                HStack(spacing: 12) {
+                    ForEach(FinderLayout.allCases) { layout in
+                        LayoutTile(layout: layout, isSelected: settings.layout == layout) {
+                            store.update { $0.windowFinder.layout = layout }
+                        }
+                    }
+                }
+                .padding(14)
+            }
+
             SettingsGroup(title: "Find Windows") {
                 ToggleRow(title: String(localized: "Hold \(settings.key.title) to find windows"), isOn: store.binding(\.windowFinder.isEnabled))
                 SettingsDivider()
@@ -26,8 +37,8 @@ struct WindowsView: View {
                     detail: "Opens the list and keeps it open: type, press ↩ to switch or esc to close. No need to hold anything."
                 ) {
                     HStack(spacing: 8) {
-                        KeyRecorder(combo: store.binding(\.windowFinder.shortcut))
-                            .frame(width: 150)
+                        KeyRecorder(combo: store.binding(\.windowFinder.shortcut), compact: true)
+                            .frame(width: 170)
                         if settings.shortcut != nil {
                             Button { store.update { $0.windowFinder.shortcut = nil } } label: {
                                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
@@ -52,6 +63,15 @@ struct WindowsView: View {
                     format: "%.2f s"
                 )
                 .disabled(!settings.isEnabled)
+            }
+
+            SettingsGroup(
+                title: "Learning",
+                footer: "Kept only on this Mac, as counts of what you picked for what you typed."
+            ) {
+                ToggleRow(title: "Remember my choices", detail: "The window you usually pick for “sh” comes first next time.", isOn: store.binding(\.windowFinder.rememberChoices))
+                SettingsDivider()
+                ActionRow(title: "Forget What I Picked", symbol: "arrow.counterclockwise", role: .destructive) { WindowFinder.shared.forgetHistory() }
             }
 
             SettingsGroup(
@@ -141,7 +161,7 @@ private struct FinderIllustration: View {
                     HStack(spacing: 6) {
                         Keycap(label: keySymbol)
                         Keycap(label: "A")
-                        Keycap(label: "Space")
+                        Keycap(label: "↩")
                     }
                 }
                 .padding(.vertical, 12)
@@ -168,5 +188,58 @@ private struct MiniCard: View {
         .padding(5)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Color.accentColor.opacity(0.18) : .clear))
         .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color.accentColor.opacity(isSelected ? 0.9 : 0), lineWidth: 1.5))
+    }
+}
+
+/// A small picture of one layout, to choose by looking.
+private struct LayoutTile: View {
+    let layout: FinderLayout
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.05))
+                    sketch.padding(10)
+                }
+                .frame(height: 78)
+                Text(layout == .split ? "List with preview" : "Cards")
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(isSelected ? Color.accentColor.opacity(0.12) : .clear))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.12), lineWidth: isSelected ? 2 : 0.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder private var sketch: some View {
+        switch layout {
+        case .split:
+            HStack(spacing: 6) {
+                VStack(spacing: 4) {
+                    ForEach(0..<4, id: \.self) { row in
+                        RoundedRectangle(cornerRadius: 3).fill(row == 1 ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.2)).frame(height: 9)
+                    }
+                }
+                .frame(width: 44)
+                RoundedRectangle(cornerRadius: 4).fill(LinearGradient(colors: [.blue.opacity(0.5), .purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+        case .cards:
+            VStack(spacing: 5) {
+                ForEach(0..<2, id: \.self) { row in
+                    HStack(spacing: 5) {
+                        ForEach(0..<3, id: \.self) { column in
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(row == 0 && column == 1 ? Color.accentColor.opacity(0.6) : [Color.orange, .pink, .green, .teal, .indigo, .mint][row * 3 + column].opacity(0.45))
+                        }
+                    }
+                }
+            }
+        }
     }
 }

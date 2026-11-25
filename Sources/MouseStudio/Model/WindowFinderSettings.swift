@@ -51,6 +51,14 @@ enum FinderKey: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// How the list is laid out.
+enum FinderLayout: String, Codable, CaseIterable, Sendable {
+    /// A list on the left and a large picture of the chosen window on the right.
+    case split
+    /// Cards with a picture each.
+    case cards
+}
+
 /// Settings of "Find Windows": hold a key, type part of a window's title, let go to jump there.
 struct WindowFinderSettings: Codable, Equatable, Sendable {
     static let delayRange = 0.15...0.6
@@ -63,6 +71,9 @@ struct WindowFinderSettings: Codable, Equatable, Sendable {
     var showPreviews = true
     /// Opens the list and keeps it open (type, ↩ to switch, esc to cancel), without holding anything.
     var shortcut: KeyCombo?
+    var layout = FinderLayout.split
+    /// What you pick for what you typed moves that window up next time.
+    var rememberChoices = true
 
     init() {}
 
@@ -74,6 +85,8 @@ struct WindowFinderSettings: Codable, Equatable, Sendable {
         delay = try container.decodeIfPresent(Double.self, forKey: .delay) ?? defaults.delay
         showPreviews = try container.decodeIfPresent(Bool.self, forKey: .showPreviews) ?? defaults.showPreviews
         shortcut = try? container.decodeIfPresent(KeyCombo.self, forKey: .shortcut)
+        layout = (try? container.decodeIfPresent(FinderLayout.self, forKey: .layout)) ?? defaults.layout
+        rememberChoices = try container.decodeIfPresent(Bool.self, forKey: .rememberChoices) ?? defaults.rememberChoices
     }
 
     func clamped() -> WindowFinderSettings {
@@ -81,6 +94,10 @@ struct WindowFinderSettings: Codable, Equatable, Sendable {
         copy.delay = delay.clamped(to: Self.delayRange)
         return copy
     }
+}
+
+extension FinderLayout: Identifiable {
+    var id: String { rawValue }
 }
 
 extension FinderKey: Identifiable {

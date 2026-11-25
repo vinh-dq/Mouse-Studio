@@ -49,9 +49,16 @@ final class WindowFinder {
     /// Most recently used apps first, from the workspace's activation notices.
     private var appOrder: [pid_t] = []
     private var keyMonitor: Any?
+    /// Used only while the mouse engine is stopped, so the hold key still works when Mouse Studio is paused.
+    private var fallbackMonitors: [Any] = []
+    private var pressedAt = Date.distantPast
+    /// The last list of windows, shown at once on the next opening and then refreshed.
+    private var cache: (items: [WindowItem], date: Date)?
+    private let history = FinderHistoryStore()
     private var clickMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     private let thumbnailer = WindowThumbnailer()
+    private var prepareTask: Task<Void, Never>?
     private var thumbnailTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
 
@@ -75,6 +82,11 @@ final class WindowFinder {
             .store(in: &cancellables)
         FinderHotKey.shared.onPressed = { [unowned self] in if AXIsProcessTrusted() { toggle() } }
         model.onCommit = { [unowned self] index in commit(index: index) }
+        model.boost = { [unowned self] query, item in settings.rememberChoices ? history.boost(query: query, item: item) : 0 }
+        // Build the panel now, so the first opening isn't the slow one.
+        DispatchQueue.main.async { [unowned self] in if panel == nil { panel = makePanel() } }
+        let missing = SkyLight.missing
+        if !missing.isEmpty { FinderLog.shared.note("missing window-server calls: \(missing.joined(separator: ", "))") }
         // `@Published` announces a change just before it is stored; waiting a turn of the run loop reads the new value.
         model.$contentHeight
             .removeDuplicates()
@@ -100,6 +112,10 @@ final class WindowFinder {
         if !settings.isEnabled { cancelPending() }
     }
 
+    func forgetHistory() {
+        history.forget()
+    }
+
     /// Opens the list and keeps it open until a window is chosen or it is cancelled (for a mouse button).
     func toggle() {
         if isShown { close() } else { present(byHold: false) }
@@ -112,10 +128,32 @@ final class WindowFinder {
 
     // MARK: Key trigger
 
+    /// While the mouse engine isn't running (Mouse Studio paused), the hold key is followed through ordinary
+    /// system event monitors instead of the engine's event tap.
+    func setEventFallback(_ on: Bool) {
+        fallbackMonitors.forEach(NSEvent.removeMonitor)
+        fallbackMonitors = []
+        guard on else { return }
+        let keys: (NSEvent) -> Void = { event in
+            FinderTrigger.shared.flagsChanged(UInt64(event.modifierFlags.rawValue), suppressed: false)
+        }
+        let other: (NSEvent) -> Void = { _ in FinderTrigger.shared.otherInput() }
+        let mouse: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
+        fallbackMonitors = [
+            NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: keys),
+            NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { keys($0); return $0 },
+            NSEvent.addGlobalMonitorForEvents(matching: mouse, handler: other),
+        ].compactMap { $0 }
+    }
+
     private func keyPressed() {
         guard settings.isEnabled, !isShown, AXIsProcessTrusted() else { return }
         isHolding = true
+        pressedAt = Date()
         cancelPending()
+        // The list and the pictures are prepared during the hold delay, so the panel can appear at once.
+        Task { _ = await fetchSnapshot() }
+        if settings.showPreviews { prepareTask = Task { await thumbnailer.prepare() } }
         // A key typed while the modifier is held is a shortcut for the app in front, not a search.
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
             Task { @MainActor in self?.cancelPending() }
@@ -140,7 +178,7 @@ final class WindowFinder {
 
     private func holdElapsed() {
         pendingShow = nil
-        guard isHolding, !anyKeyIsDown() else { return cancelPending() }
+        guard isHolding, !typedSincePress(), !anyKeyIsDown() else { return cancelPending() }
         present(byHold: true)
     }
 
@@ -150,6 +188,13 @@ final class WindowFinder {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
         if !isShown { session += 1 }
+    }
+
+    /// True when a key was pressed since the modifier went down, even one already let go. Asking when the last key
+    /// event happened needs no extra permission.
+    private func typedSincePress() -> Bool {
+        let sinceKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+        return sinceKey < Date().timeIntervalSince(pressedAt)
     }
 
     /// A key that was typed and let go inside the hold delay is not seen by the monitor without extra permission,
@@ -170,28 +215,59 @@ final class WindowFinder {
         guard AXIsProcessTrusted() else { return }
         session += 1
         let current = session
-        let order = appOrder
-        let includeOtherSpaces = WindowThumbnailer.hasAccess
-        Task.detached(priority: .userInitiated) {
-            let items = WindowCatalog.snapshot(appOrder: order, includeOtherSpaces: includeOtherSpaces)
-            await MainActor.run { [weak self] in
-                guard let self, self.session == current, !byHold || self.isHolding else { return }
-                self.show(items, byHold: byHold)
+        let started = Date()
+        // A list from the last few seconds is shown straight away and then brought up to date; the chosen window
+        // follows the fresh order until the user touches anything.
+        if let cache, Date().timeIntervalSince(cache.date) < 30 {
+            show(cache.items, byHold: byHold)
+            FinderLog.shared.note(String(format: "opened from cache (%.0f ms), %d windows", Date().timeIntervalSince(started) * 1000, cache.items.count))
+            if Date().timeIntervalSince(cache.date) > 0.5 {
+                Task { [weak self] in
+                    guard let self else { return }
+                    let items = await fetchSnapshot()
+                    guard isShown, session == current else { return }
+                    model.replace(items: items)
+                }
             }
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let items = await fetchSnapshot()
+            guard session == current, !byHold || isHolding else { return }
+            show(items, byHold: byHold)
+            FinderLog.shared.note(String(format: "opened after listing (%.0f ms), %d windows", Date().timeIntervalSince(started) * 1000, items.count))
         }
     }
 
-    private func show(_ items: [WindowItem], byHold: Bool) {
+    private func fetchSnapshot() async -> [WindowItem] {
+        let order = appOrder
+        let includeOtherSpaces = WindowThumbnailer.hasAccess
+        let started = Date()
+        let items = await Task.detached(priority: .userInitiated) {
+            WindowCatalog.snapshot(appOrder: order, includeOtherSpaces: includeOtherSpaces)
+        }.value
+        cache = (items, Date())
+        FinderLog.shared.note(String(format: "listed %d windows in %.0f ms", items.count, Date().timeIntervalSince(started) * 1000))
+        return items
+    }
+
+    func show(_ items: [WindowItem], byHold: Bool) {
         let screen = Self.screenUnderPointer()
         let showsPictures = settings.showPreviews && WindowThumbnailer.hasAccess
         let visible = screen.visibleFrame
-        let rowsThatFit = Int((visible.height * 0.78 - 2 * FinderMetrics.inset - FinderMetrics.searchHeight - FinderMetrics.hintHeight) / (FinderMetrics.cardHeight + FinderMetrics.spacing))
+        let layout = settings.layout
+        let room = visible.height * 0.78 - 2 * FinderMetrics.inset - FinderMetrics.searchHeight - FinderMetrics.hintHeight
+        let rows = layout == .split
+            ? Int(room / FinderMetrics.rowHeight)
+            : min(3, Int(room / (FinderMetrics.cardHeight + FinderMetrics.spacing)))
         model.isVisible = false
         model.begin(
             items: items,
             releaseKey: byHold ? settings.key.symbol : nil,
             showsPictures: showsPictures,
-            maxVisibleRows: max(1, min(3, rowsThatFit))
+            layout: layout,
+            maxVisibleRows: max(1, rows)
         )
 
         let panel = self.panel ?? makePanel()
@@ -207,7 +283,7 @@ final class WindowFinder {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
             Task { @MainActor in self?.close() }
         }
-        if showsPictures { loadThumbnails() }
+        if showsPictures && !FinderDemo.isActive { loadThumbnails() }
         selectionChanged()
     }
 
@@ -226,7 +302,7 @@ final class WindowFinder {
     }
 
     private func frame(for contentHeight: CGFloat, on screen: NSScreen) -> NSRect {
-        let width = FinderMetrics.width + 2 * FinderMetrics.inset
+        let width = model.panelWidth + 2 * FinderMetrics.inset
         let height = contentHeight + 2 * FinderMetrics.inset
         let visible = screen.visibleFrame
         return NSRect(x: visible.midX - width / 2, y: panelTop - height + FinderMetrics.inset, width: width, height: height)
@@ -264,6 +340,7 @@ final class WindowFinder {
     private func commit(index: Int) {
         guard model.results.indices.contains(index) else { return close() }
         let item = model.results[index]
+        if settings.rememberChoices { history.record(query: model.query, item: item) }
         close()
         WindowActions.focus(item)
     }
@@ -289,7 +366,7 @@ final class WindowFinder {
         case 126: model.moveRow(-1); return true
         case 49: // space
             if command { return true }
-            if model.query.isEmpty { model.togglePreview() } else { model.type(" ") }
+            if model.layout == .cards && model.query.isEmpty { model.togglePreview() } else if !model.query.isEmpty { model.type(" ") }
             return true
         case 51: // delete
             if command { model.clearQuery() } else { model.backspace() }
@@ -347,15 +424,19 @@ final class WindowFinder {
 
     private func loadThumbnails() {
         thumbnailTask?.cancel()
-        let targets = model.items.compactMap { item in item.windowID.map { (item.id, $0) } }
+        // The chosen window first, then the rest in the order they appear.
+        let chosen = model.selected?.id
+        let ordered = model.results.filter { $0.id == chosen } + model.results.filter { $0.id != chosen }
+        let targets = ordered.compactMap { item in item.windowID.map { (item.id, $0) } }
         let thumbnailer = self.thumbnailer
+        let preparing = prepareTask
         let width = FinderMetrics.cardWidth
         thumbnailTask = Task { [weak self] in
-            await thumbnailer.prepare()
+            if let preparing { await preparing.value } else { await thumbnailer.prepare() }
             var index = 0
             while index < targets.count, !Task.isCancelled {
-                let batch = targets[index..<min(index + 3, targets.count)]
-                index += 3
+                let batch = targets[index..<min(index + 4, targets.count)]
+                index += 4
                 await withTaskGroup(of: (String, NSImage?).self) { group in
                     for (id, windowID) in batch {
                         group.addTask { @MainActor in (id, await thumbnailer.image(of: windowID, width: width)) }
@@ -371,10 +452,13 @@ final class WindowFinder {
     /// Asks for a larger picture of the selected window while the quick look is open.
     private func selectionChanged() {
         previewTask?.cancel()
-        guard isShown, model.isPreviewing, model.showsPictures, let windowID = model.selected?.windowID else { return }
+        guard isShown, !FinderDemo.isActive, model.isPreviewing || model.layout == .split, model.showsPictures, let windowID = model.selected?.windowID else { return }
         model.setPreview(nil)
         let thumbnailer = self.thumbnailer
         previewTask = Task { [weak self] in
+            // Moving quickly through the list shouldn't take a large picture of every window on the way.
+            try? await Task.sleep(for: .milliseconds(70))
+            guard !Task.isCancelled else { return }
             let image = await thumbnailer.image(of: windowID, width: 900)
             guard !Task.isCancelled, let self, self.model.selected?.windowID == windowID else { return }
             self.model.setPreview(image)
