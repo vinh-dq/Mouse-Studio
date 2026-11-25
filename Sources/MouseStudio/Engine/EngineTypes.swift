@@ -24,6 +24,8 @@ struct MouseInput {
     var isDirectionInverted = false
     /// For `.down` / `.scroll`: registry ID of the device that sent it (0 = unknown or synthetic).
     var senderID: UInt64 = 0
+    /// For `.flagsChanged`: the full flags, including which physical modifier key (left or right) is down.
+    var rawFlags: UInt64 = 0
 }
 
 enum Disposition {

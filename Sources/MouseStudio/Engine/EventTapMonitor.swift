@@ -150,6 +150,7 @@ extension MouseInput {
             self.init(kind: .scroll, modifiers: modifiers, location: location, delta: delta, timestamp: timestamp, isWheel: isWheel, lines: lines, isDirectionInverted: inverted)
         case .flagsChanged:
             self.init(kind: .flagsChanged, modifiers: modifiers, location: location, timestamp: timestamp)
+            rawFlags = event.flags.rawValue
         default:
             return nil
         }

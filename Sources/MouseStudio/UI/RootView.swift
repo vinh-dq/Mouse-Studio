@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum AppTab: String, CaseIterable, Identifiable {
-    case general, buttons, scrolling, apps, devices, about
+    case general, buttons, scrolling, windows, apps, devices, about
 
     var id: String { rawValue }
 
@@ -10,6 +10,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .general: String(localized: "General")
         case .buttons: String(localized: "Buttons")
         case .scrolling: String(localized: "Scrolling")
+        case .windows: String(localized: "Windows")
         case .apps: String(localized: "Apps")
         case .devices: String(localized: "Devices")
         case .about: String(localized: "About")
@@ -21,6 +22,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .general: "gearshape"
         case .buttons: "computermouse"
         case .scrolling: "arrow.up.and.down.and.arrow.left.and.right"
+        case .windows: "macwindow.on.rectangle"
         case .apps: "square.dashed.inset.filled"
         case .devices: "computermouse.fill"
         case .about: "info.circle"
@@ -44,6 +46,7 @@ struct RootView: View {
                 case .general: GeneralView()
                 case .buttons: ButtonsView()
                 case .scrolling: ScrollingView()
+                case .windows: WindowsView()
                 case .apps: AppsView()
                 case .devices: DevicesView()
                 case .about: AboutView()
@@ -78,7 +81,7 @@ private struct TabBar: View {
                         Text(tab.title)
                             .font(.system(size: 11))
                     }
-                    .frame(width: 64, height: 46)
+                    .frame(width: 60, height: 46)
                     .foregroundStyle(selection == tab ? Color.accentColor : Color.secondary)
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)

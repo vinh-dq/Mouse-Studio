@@ -31,6 +31,8 @@ final class AppModel: ObservableObject {
         lastEnabled = store.config.isEnabled
         issue = store.loadIssue
         engine.update(store.config)
+        WindowFinder.shared.start()
+        WindowFinder.shared.apply(store.config.windowFinder)
 
         engine.onFailure = { [weak self] message in
             Task { @MainActor in self?.issue = message }
@@ -180,6 +182,7 @@ final class AppModel: ObservableObject {
 
     private func configChanged(_ config: AppConfig) {
         engine.update(config)
+        WindowFinder.shared.apply(config.windowFinder)
         if config.isEnabled != lastEnabled {
             lastEnabled = config.isEnabled
             reconcile(enabled: config.isEnabled)

@@ -36,6 +36,7 @@ Mọi dữ liệu chỉ nằm trên máy Mac của bạn, không gửi đi đâu
 | **Zoom bằng con lăn** | Giữ một nút (hoặc ⌘) rồi lăn để phóng to / thu nhỏ trong Preview, Ảnh, Bản đồ, trình duyệt… |
 | **Phím khi lăn** | ⇧ cuộn ngang, ⌘ zoom, ⌃ cuộn nhanh, ⌥ cuộn chậm chính xác (đổi được). |
 | **Bỏ qua một số ứng dụng** | Tắt Mouse Studio trong game, máy tính từ xa và máy ảo. |
+| **Tìm cửa sổ** | Giữ Option bên phải, gõ một phần tiêu đề cửa sổ, thả phím để chuyển tới đó. Danh sách kính có ảnh xem trước. |
 | **Cài đặt riêng cho từng chuột** | Tắt Mouse Studio cho một chuột, hoặc cho nó tốc độ và Kéo để cuộn riêng. |
 | **Thanh menu** | Tạm dừng, đảo chiều cuộn hoặc bỏ qua ứng dụng đang mở chỉ với một cú nhấp. |
 | **Tiếng Anh và tiếng Việt** | Chọn ngôn ngữ trong tab Chung. |
@@ -137,6 +138,25 @@ Mức di chuyển của Spaces ứng với mỗi đoạn kéo chuột. Càng th�
 **Spaces & Mission Control**: kéo sang trái hoặc phải để chuyển Spaces, kéo lên để mở Mission Control, kéo xuống để mở App Exposé.
 
 <br clear="all">
+
+### Cửa sổ
+Giữ **Option bên phải** (hoặc Option trái, Command phải, Control phải) khoảng một phần tư giây, danh sách kính các cửa sổ đang mở sẽ hiện ra.
+Gõ một phần tên ứng dụng hoặc tiêu đề (không cần dấu: `cua so` tìm ra “Cửa sổ”), rồi thả phím để chuyển.
+Nhấn nhanh, hoặc nhấn phím khác sớm hơn, thì phím vẫn thuộc về ứng dụng của bạn.
+
+| Phím | Tác dụng |
+|---|---|
+| chữ cái | Lọc theo tên ứng dụng và tiêu đề cửa sổ |
+| ⇥ ← → ↑ ↓ | Chọn cửa sổ (hoặc rê chuột lên cửa sổ đó) |
+| Space | Xem nhanh cửa sổ đang chọn (khi chưa gõ gì) |
+| ⌘W · ⌘M | Đóng · thu nhỏ cửa sổ đang chọn |
+| ⌘Q · ⌘H | Thoát · ẩn ứng dụng của cửa sổ đó |
+| ↩ · esc | Chuyển ngay · hủy |
+
+Thả phím chỉ chuyển cửa sổ khi bạn đã gõ, đã chọn hoặc đang xem nhanh; nếu không, danh sách chỉ đóng lại.
+Ảnh xem trước cần quyền **Ghi màn hình**; không có quyền này, danh sách hiện biểu tượng ứng dụng. Mouse Studio chỉ đọc tiêu đề
+và chụp ảnh khi danh sách đang mở. Cửa sổ ở màn hình nền khác chỉ hiện khi đã cho phép Ghi màn hình.
+Bạn cũng có thể mở danh sách bằng một nút chuột bất kỳ: thêm cử chỉ và chọn **Tìm cửa sổ**.
 
 ### Ứng dụng
 <img src="docs/images/vi/apps.png" width="440" align="right" alt="Tab Ứng dụng">

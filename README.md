@@ -36,6 +36,7 @@ keeps everything on your Mac and sends nothing anywhere.
 | **Zoom with the wheel** | Hold a button (or ⌘) and turn the wheel to pinch-zoom in Preview, Photos, Maps, browsers and more. |
 | **Keys while scrolling** | ⇧ scrolls sideways, ⌘ zooms, ⌃ scrolls faster, ⌥ scrolls precisely (all changeable). |
 | **Leave some apps alone** | Turn Mouse Studio off in games, remote desktops and virtual machines. |
+| **Find Windows** | Hold Right Option, type part of a window's title, let go to jump there. Glass list with previews. |
 | **Per-mouse settings** | Switch Mouse Studio off for one mouse, or give it its own speed and Drag Scroll settings. |
 | **Menu bar** | Pause, reverse the scroll direction or skip the app in front with one click. |
 | **English and Vietnamese** | Pick the language in General. |
@@ -137,6 +138,25 @@ How far the desktops move for each bit of mouse movement. Lower is slower and ge
 **Spaces & Mission Control** gesture: drag left or right to move between Spaces, up for Mission Control, down for App Exposé.
 
 <br clear="all">
+
+### Windows
+Hold **Right Option** (or Left Option, Right Command, Right Control: your choice) for a quarter of a second and a glass list of every open window appears.
+Type part of an app name or a title (accents don't matter: `cua so` finds “Cửa sổ”), then let go of the key to switch.
+A quick tap, or any other key pressed sooner, still belongs to your app.
+
+| Key | What it does |
+|---|---|
+| letters | Filter by app name and window title |
+| ⇥ ← → ↑ ↓ | Choose a window (or move the pointer over one) |
+| Space | Quick look at the chosen window (when nothing is typed) |
+| ⌘W · ⌘M | Close · minimize the chosen window |
+| ⌘Q · ⌘H | Quit · hide its app |
+| ↩ · esc | Switch right away · cancel |
+
+Letting go of the key switches only if you typed, chose or looked at a window; otherwise the list just closes.
+Pictures of the windows need **Screen Recording** access; without it the list shows app icons. Mouse Studio only reads
+titles and takes the pictures while the list is open. Windows on other desktops are listed when Screen Recording is allowed.
+You can also open the list with any mouse button: add a gesture and choose **Find Window**.
 
 ### Apps
 <img src="docs/images/apps.png" width="440" align="right" alt="Apps tab">

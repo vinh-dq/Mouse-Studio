@@ -72,6 +72,7 @@ extension Action {
         case .none, .mouseButton, .keyboardShortcut: .gray
         case .system(let action): action.tint
         case .openApp, .openURL: .teal
+        case .findWindow: .indigo
         case .runScript: .orange
         case .dragScroll, .swipeGesture, .scrollZoom, .scrollVolume: .blue
         }
@@ -84,6 +85,7 @@ extension Action {
         case .swipeGesture: String(localized: "Slide Spaces and Mission Control by hand")
         case .scrollZoom: String(localized: "Scroll to zoom in and out")
         case .scrollVolume: String(localized: "Scroll to change the volume")
+        case .findWindow: String(localized: "Type a few letters to jump to any window")
         case .none: String(localized: "Button does nothing")
         default: nil
         }

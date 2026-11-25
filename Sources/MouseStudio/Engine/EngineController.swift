@@ -245,6 +245,7 @@ final class EngineController {
     }
 
     private func process(_ input: MouseInput) -> Disposition {
+        followFinderKey(input)
         if capturing.withLock({ $0 }) {
             if !wasCapturing {
                 processor.reset()
@@ -279,6 +280,21 @@ final class EngineController {
 
         noteActivity()
         return processor.handle(input)
+    }
+
+    /// Feeds the window finder's trigger key. It watches the key even where Mouse Studio is paused for an app, so a
+    /// release is never missed; it just doesn't start there.
+    private func followFinderKey(_ input: MouseInput) {
+        switch input.kind {
+        case .flagsChanged:
+            let suppressed = capturing.withLock { $0 }
+                || frontmost.withLock { $0 }.map { app in configBox.withLock { $0.excludedApps.contains(app) } } == true
+            FinderTrigger.shared.flagsChanged(input.rawFlags, suppressed: suppressed)
+        case .down, .scroll:
+            FinderTrigger.shared.otherInput()
+        case .up, .dragged:
+            break
+        }
     }
 
     /// Mice seen so far this session, newest first.
