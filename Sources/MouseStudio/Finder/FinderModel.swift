@@ -17,6 +17,18 @@ enum FinderMetrics {
     static let previewHeight: CGFloat = 410
     static let emptyHeight: CGFloat = 140
     static let cornerRadius: CGFloat = 30
+
+    // The split layout: a list and a large picture.
+    static let splitWidth: CGFloat = 880
+    static let listWidth: CGFloat = 330
+    static let rowHeight: CGFloat = 56
+    static let listPadding: CGFloat = 10
+    static let splitMinBody: CGFloat = 330
+    static let splitMaxRows = 8
+
+    static func width(for layout: FinderLayout) -> CGFloat {
+        layout == .split ? splitWidth : width
+    }
 }
 
 /// What the finder shows: the windows, what was typed, which one is selected.
@@ -35,18 +47,24 @@ final class FinderModel: ObservableObject {
     @Published private(set) var releaseKey: String?
     /// Whether windows are shown as pictures (previews on, and Screen Recording allowed).
     @Published private(set) var showsPictures = false
+    @Published private(set) var layout = FinderLayout.split
 
     /// True once the user typed, selected or previewed something. Letting go of the key then switches windows.
     private(set) var interacted = false
     var maxVisibleRows = 3
     var onCommit: ((Int) -> Void)?
+    /// Extra score for windows the user has picked before for what they typed.
+    var boost: ((String, WindowItem) -> Int)?
+
+    var panelWidth: CGFloat { FinderMetrics.width(for: layout) }
 
     private var openedPointer = NSEvent.mouseLocation
     private var pointerMoved = false
 
     var selected: WindowItem? { results.indices.contains(selection) ? results[selection] : nil }
 
-    func begin(items: [WindowItem], releaseKey: String?, showsPictures: Bool, maxVisibleRows: Int) {
+    func begin(items: [WindowItem], releaseKey: String?, showsPictures: Bool, layout: FinderLayout, maxVisibleRows: Int) {
+        self.layout = layout
         self.items = items
         self.releaseKey = releaseKey
         self.showsPictures = showsPictures
@@ -73,7 +91,8 @@ final class FinderModel: ObservableObject {
     /// A fresh list (after a window was closed, say): the query and the selected window are kept where possible.
     func replace(items: [WindowItem]) {
         self.items = items
-        refilter(keeping: selected?.id)
+        // Until the user does something, the list may still be a cached one; the choice follows the fresh order.
+        refilter(keeping: interacted ? selected?.id : nil)
     }
 
     func remove(id: String) {
@@ -113,7 +132,12 @@ final class FinderModel: ObservableObject {
 
     /// Up and down move one row; at the first or last row they stay where they are.
     func moveRow(_ rows: Int) {
-        guard !results.isEmpty, !isPreviewing else { return }
+        guard !results.isEmpty else { return }
+        if layout == .split {
+            move(rows)
+            return
+        }
+        guard !isPreviewing else { return }
         let target = selection + rows * FinderMetrics.columns
         if results.indices.contains(target) {
             selection = target
@@ -137,7 +161,7 @@ final class FinderModel: ObservableObject {
     }
 
     func togglePreview() {
-        guard selected != nil else { return }
+        guard selected != nil, layout == .cards else { return }
         isPreviewing.toggle()
         previewImage = nil
         interacted = true
@@ -155,7 +179,9 @@ final class FinderModel: ObservableObject {
     // MARK: Private
 
     private func refilter(keeping id: String?, nearIndex: Int? = nil) {
-        results = WindowSearch.filter(items, query: query)
+        let boost = self.boost
+        let typed = query
+        results = WindowSearch.filter(items, query: query) { boost?(typed, $0) ?? 0 }
         if let id, let index = results.firstIndex(where: { $0.id == id }) {
             selection = index
         } else if let nearIndex {
@@ -173,6 +199,9 @@ final class FinderModel: ObservableObject {
         let body: CGFloat
         if results.isEmpty {
             body = FinderMetrics.emptyHeight
+        } else if layout == .split {
+            let rows = CGFloat(min(results.count, min(maxVisibleRows, FinderMetrics.splitMaxRows)))
+            body = max(FinderMetrics.splitMinBody, rows * FinderMetrics.rowHeight + 2 * FinderMetrics.listPadding)
         } else if isPreviewing {
             body = FinderMetrics.previewHeight
         } else {

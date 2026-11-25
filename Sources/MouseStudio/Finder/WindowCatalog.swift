@@ -7,18 +7,6 @@ private func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMut
 @_silgen_name("_AXUIElementCreateWithRemoteToken")
 private func _AXUIElementCreateWithRemoteToken(_ token: CFData) -> Unmanaged<AXUIElement>?
 
-/// Window-server calls that have no public equivalent. Looked up at run time, so if a macOS update removes one the
-/// finder falls back to plain app activation instead of the app failing to start.
-private enum SkyLight {
-    typealias SetFront = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UInt32, UInt32) -> CGError
-    typealias PostEvent = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UnsafeMutablePointer<UInt8>) -> CGError
-
-    private static let handle = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
-
-    static let setFront: SetFront? = handle.flatMap { dlsym($0, "_SLPSSetFrontProcessWithOptions") }.map { unsafeBitCast($0, to: SetFront.self) }
-    static let postEvent: PostEvent? = handle.flatMap { dlsym($0, "SLPSPostEventRecordTo") }.map { unsafeBitCast($0, to: PostEvent.self) }
-}
-
 @_silgen_name("GetProcessForPID")
 private func GetProcessForPID(_ pid: pid_t, _ psn: UnsafeMutablePointer<ProcessSerialNumber>) -> OSStatus
 
@@ -53,7 +41,12 @@ enum WindowCatalog {
             let z = item.windowID.flatMap { stacking[$0] } ?? Int.max
             return (z, rank[item.pid] ?? Int.max, item.title)
         }
-        return found.sorted { key($0) < key($1) }
+        var sorted = found.sorted { key($0) < key($1) }
+        let places = WindowSpaces.labels(for: sorted.compactMap(\.windowID))
+        for index in sorted.indices {
+            if let id = sorted[index].windowID { sorted[index].place = places[id] }
+        }
+        return sorted
     }
 
     /// Window number → position from the front, for windows that are on screen now.
@@ -168,6 +161,7 @@ enum WindowActions {
                     if switched { makeKey(&psn, windowID) }
                 }
             }
+            if !switched, item.windowID != nil { FinderLog.shared.note("window-server focus unavailable; using app activation") }
             if !switched && item.element != nil {
                 AXUIElementSetAttributeValue(AXUIElementCreateApplication(item.pid), kAXFrontmostAttribute as CFString, kCFBooleanTrue)
                 app?.activate()
@@ -176,7 +170,9 @@ enum WindowActions {
             // be found by asking for the app's elements one by one. Raising it is what switches to its desktop.
             var element = item.element
             if element == nil, let windowID = item.windowID {
+                let started = Date()
                 element = axWindow(pid: item.pid, windowID: windowID) ?? hiddenWindow(pid: item.pid, windowID: windowID)
+                FinderLog.shared.note(String(format: "other-desktop window: element %@ after %.0f ms", element == nil ? "NOT found" : "found", Date().timeIntervalSince(started) * 1000))
             }
             if let element {
                 AXUIElementPerformAction(element, kAXRaiseAction as CFString)
@@ -195,8 +191,11 @@ enum WindowActions {
     }
 
     /// Looks for a window's Accessibility element by trying element numbers 0…1999 of the app.
+    /// Gives up after a second and a half, so an app that is not answering can't keep this busy.
     private static func hiddenWindow(pid: pid_t, windowID: CGWindowID) -> AXUIElement? {
+        let deadline = Date().addingTimeInterval(1.5)
         for number in 0..<2000 {
+            if number % 25 == 0, Date() > deadline { return nil }
             var token = Data(count: 20)
             token.withUnsafeMutableBytes { raw in
                 var pid32 = pid

@@ -140,9 +140,21 @@ How far the desktops move for each bit of mouse movement. Lower is slower and ge
 <br clear="all">
 
 ### Windows
+<img src="docs/images/windows.png" width="440" align="right" alt="Windows tab">
+
 Hold **Right Option** (or Left Option, Right Command, Right Control: your choice) for a quarter of a second and a glass list of every open window appears.
+Or record a **shortcut** that opens the list and keeps it open: type, press ↩ to switch, esc to close.
 Type part of an app name or a title (accents don't matter: `cua so` finds “Cửa sổ”), then let go of the key to switch.
 A quick tap, or any other key pressed sooner, still belongs to your app.
+
+<br clear="all">
+
+<img src="docs/images/finder-search.png" width="640" alt="The window list, filtered by typing">
+
+Each window shows which desktop (and display) it is on. The letters you typed are highlighted, and the windows you pick for a text move up next time (switch it off with **Remember my choices**).
+Choose the **Look** in the tab: a list with a large picture of the chosen window, or cards.
+
+<img src="docs/images/finder-cards.png" width="640" alt="The window list as cards">
 
 | Key | What it does |
 |---|---|

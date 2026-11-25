@@ -27,6 +27,8 @@ struct FinderView: View {
             Group {
                 if model.results.isEmpty {
                     EmptyState(model: model)
+                } else if model.layout == .split {
+                    SplitBody(model: model)
                 } else if model.isPreviewing, let item = model.selected {
                     PreviewPane(item: item, image: model.previewImage ?? model.thumbnails[item.id])
                 } else {
@@ -35,9 +37,9 @@ struct FinderView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider().opacity(0.4)
-            HintBar(releaseKey: model.releaseKey)
+            HintBar(releaseKey: model.releaseKey, layout: model.layout)
         }
-        .frame(width: FinderMetrics.width, height: model.contentHeight)
+        .frame(width: model.panelWidth, height: model.contentHeight)
         .clipShape(shape)
         .finderGlass(cornerRadius: FinderMetrics.cornerRadius)
         .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
@@ -118,7 +120,7 @@ private struct ResultsGrid: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVGrid(columns: columns, spacing: FinderMetrics.spacing) {
                     ForEach(Array(model.results.enumerated()), id: \.element.id) { index, item in
-                        WindowCard(item: item, thumbnail: model.thumbnails[item.id], showsPicture: model.showsPictures, isSelected: index == model.selection)
+                        WindowCard(item: item, query: model.query, thumbnail: model.thumbnails[item.id], showsPicture: model.showsPictures, isSelected: index == model.selection)
                             .id(item.id)
                             .onContinuousHover { phase in
                                 if case .active = phase { model.hover(index) }
@@ -138,6 +140,7 @@ private struct ResultsGrid: View {
 
 private struct WindowCard: View {
     let item: WindowItem
+    let query: String
     let thumbnail: NSImage?
     let showsPicture: Bool
     let isSelected: Bool
@@ -149,11 +152,11 @@ private struct WindowCard: View {
             Thumbnail(item: item, image: thumbnail, showsPicture: showsPicture)
                 .frame(width: thumbWidth, height: FinderMetrics.thumbHeight)
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.title)
+                Text(Highlight.title(item.title, query: query))
                     .font(.system(size: 12.5, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(item.appName)
+                Text(item.subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -172,6 +175,9 @@ private struct WindowCard: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .animation(.snappy(duration: 0.15), value: isSelected)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(item.title), \(item.subtitle)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -289,10 +295,158 @@ private struct EmptyState: View {
     }
 }
 
+// MARK: - Split layout
+
+private struct SplitBody: View {
+    @ObservedObject var model: FinderModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: 2) {
+                        ForEach(Array(model.results.enumerated()), id: \.element.id) { index, item in
+                            WindowRow(item: item, query: model.query, isSelected: index == model.selection)
+                                .id(item.id)
+                                .onContinuousHover { phase in
+                                    if case .active = phase { model.hover(index) }
+                                }
+                                .onTapGesture { model.onCommit?(index) }
+                        }
+                    }
+                    .padding(FinderMetrics.listPadding)
+                }
+                .onChange(of: model.selection) { _, _ in
+                    guard let id = model.selected?.id else { return }
+                    withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(id) }
+                }
+            }
+            .frame(width: FinderMetrics.listWidth)
+            Divider().opacity(0.4)
+            if let item = model.selected {
+                DetailPane(item: item, image: model.previewImage ?? model.thumbnails[item.id], showsPictures: model.showsPictures)
+            }
+        }
+    }
+}
+
+private struct WindowRow: View {
+    let item: WindowItem
+    let query: String
+    let isSelected: Bool
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        HStack(spacing: 11) {
+            Group {
+                if let icon = item.icon {
+                    Image(nsImage: icon).resizable().interpolation(.high)
+                } else {
+                    Image(systemName: "macwindow").resizable().scaledToFit().padding(6).foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 34, height: 34)
+            .opacity(item.isMinimized || item.isAppHidden ? 0.55 : 1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(Highlight.title(item.title, query: query))
+                    .font(.system(size: 13.5, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(item.subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if item.isMinimized {
+                Image(systemName: "minus.circle").font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: FinderMetrics.rowHeight - 2)
+        .background(shape.fill(isSelected ? Color.accentColor.opacity(0.2) : .clear))
+        .overlay(shape.strokeBorder(Color.accentColor.opacity(isSelected ? 0.55 : 0), lineWidth: 1))
+        .contentShape(shape)
+        .animation(.snappy(duration: 0.12), value: isSelected)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(item.title), \(item.subtitle)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// The large picture of the chosen window, with its name above it.
+private struct DetailPane: View {
+    let item: WindowItem
+    let image: NSImage?
+    let showsPictures: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    if let icon = item.icon { Image(nsImage: icon).resizable().frame(width: 15, height: 15) }
+                    Text(item.subtitle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    if item.isMinimized { Badge(symbol: "minus", text: "Minimized") }
+                    if item.isAppHidden && !item.isMinimized { Badge(symbol: "eye.slash", text: "Hidden") }
+                }
+            }
+            ZStack {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
+                        .transition(.opacity)
+                } else if let icon = item.icon {
+                    VStack(spacing: 8) {
+                        Image(nsImage: icon).resizable().frame(width: 84, height: 84).opacity(0.9)
+                        if showsPictures { Text("No picture available").font(.system(size: 11)).foregroundStyle(.tertiary) }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeOut(duration: 0.15), value: image == nil)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The typed letters, drawn stronger inside the title.
+enum Highlight {
+    static func title(_ title: String, query: String) -> AttributedString {
+        var text = AttributedString(title)
+        let positions = WindowSearch.matchedPositions(in: title, query: query)
+        guard !positions.isEmpty else { return text }
+        let indices = Array(text.characters.indices)
+        for offset in positions.sorted() where indices.indices.contains(offset) {
+            let index = indices[offset]
+            let next = text.characters.index(after: index)
+            text[index..<next].foregroundColor = .accentColor
+            text[index..<next].inlinePresentationIntent = .stronglyEmphasized
+        }
+        return text
+    }
+}
+
+extension WindowItem {
+    /// "Safari · Desktop 2" — the app, and where the window is when that is worth saying.
+    var subtitle: String {
+        [appName, place].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
 // MARK: - Hints
 
 private struct HintBar: View {
     let releaseKey: String?
+    let layout: FinderLayout
 
     var body: some View {
         HStack(spacing: 16) {
@@ -302,7 +456,7 @@ private struct HintBar: View {
                 Hint(keys: ["↩"], text: "Switch")
             }
             Hint(keys: ["↑", "↓", "←", "→"], text: "Select")
-            Hint(keys: ["Space"], text: "Preview")
+            if layout == .cards { Hint(keys: ["Space"], text: "Preview") }
             Hint(keys: ["⌘W"], text: "Close")
             Hint(keys: ["⌘M"], text: "Minimize")
             Hint(keys: ["esc"], text: "Cancel")

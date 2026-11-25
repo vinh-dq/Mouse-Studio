@@ -15,7 +15,8 @@ enum WindowSearch {
             .replacingOccurrences(of: "đ", with: "d")
     }
 
-    static func filter<Item: WindowSearchable>(_ items: [Item], query: String) -> [Item] {
+    /// `boost` adds to the score of a window that matched, for what the user has picked before.
+    static func filter<Item: WindowSearchable>(_ items: [Item], query: String, boost: (Item) -> Int = { _ in 0 }) -> [Item] {
         let tokens = normalize(query).split(whereSeparator: \.isWhitespace).map(String.init)
         guard !tokens.isEmpty else { return items }
         var scored: [(index: Int, score: Int)] = []
@@ -28,10 +29,31 @@ enum WindowSearch {
                 if score == 0 { total = 0; break }
                 total += score
             }
-            if total > 0 { scored.append((index, total)) }
+            if total > 0 { scored.append((index, total + boost(item))) }
         }
         scored.sort { $0.score != $1.score ? $0.score > $1.score : $0.index < $1.index }
         return scored.map { items[$0.index] }
+    }
+
+    /// Positions (in `text`'s characters) that the typed words match, for drawing them in a stronger colour.
+    static func matchedPositions(in text: String, query: String) -> Set<Int> {
+        let tokens = normalize(query).split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !tokens.isEmpty else { return [] }
+        // Fold one character at a time so a position in the folded text maps back to a character of the original.
+        var folded = ""
+        var origin: [Int] = []
+        for (index, character) in text.enumerated() {
+            let piece = normalize(String(character))
+            folded += piece
+            origin += Array(repeating: index, count: piece.count)
+        }
+        var found = Set<Int>()
+        for token in tokens {
+            guard let range = folded.range(of: token) else { continue }
+            let start = folded.distance(from: folded.startIndex, to: range.lowerBound)
+            for offset in start..<(start + token.count) where origin.indices.contains(offset) { found.insert(origin[offset]) }
+        }
+        return found
     }
 
     private static func score(_ token: String, title: String, app: String) -> Int {
@@ -41,7 +63,7 @@ enum WindowSearch {
         if hasWordPrefix(app, token) { return 60 }
         if title.contains(token) { return 40 }
         if app.contains(token) { return 30 }
-        if token.count >= 2, isSubsequence(token, of: app + " " + title) { return 5 }
+        if token.count >= 3, isSubsequence(token, of: app + " " + title) { return 5 }
         return 0
     }
 

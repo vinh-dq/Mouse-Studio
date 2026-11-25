@@ -4,6 +4,8 @@ import SwiftUI
 /// Records a keyboard shortcut by listening to the real keyboard.
 struct KeyRecorder: View {
     @Binding var combo: KeyCombo?
+    /// A small version for a row in the settings.
+    var compact = false
     @LocalState private var liveModifiers: ModifierSet = []
 
     var body: some View {
@@ -11,13 +13,14 @@ struct KeyRecorder: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(nsColor: .textBackgroundColor))
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.accentColor, lineWidth: 2)
+                .strokeBorder(Color.accentColor, lineWidth: compact ? 1.5 : 2)
             Text(label)
-                .font(.system(size: 20, weight: .medium, design: .rounded))
+                .font(.system(size: compact ? 13 : 20, weight: .medium, design: .rounded))
+                .lineLimit(1)
                 .foregroundStyle(combo == nil && liveModifiers.isEmpty ? .secondary : .primary)
             RecorderSurface(combo: $combo, liveModifiers: $liveModifiers)
         }
-        .frame(height: 52)
+        .frame(height: compact ? 30 : 52)
         .accessibilityLabel("Shortcut recorder")
     }
 

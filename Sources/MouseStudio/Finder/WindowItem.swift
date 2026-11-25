@@ -17,4 +17,6 @@ struct WindowItem: Identifiable, WindowSearchable, @unchecked Sendable {
     /// The window's real size, to tell a true picture from a scaled or tilted one (Stage Manager's side strip).
     let size: CGSize?
     let icon: NSImage?
+    /// Where it is, such as "Desktop 2"; nil when there is only one desktop.
+    var place: String?
 }

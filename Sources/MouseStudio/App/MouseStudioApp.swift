@@ -32,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         NSApp.activate(ignoringOtherApps: true)
         shrinkWindowOnce()
+        #if DEBUG
+        if FinderDemo.isActive { DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { FinderDemo.run() } }
+        #endif
     }
 
     /// macOS restores the size a window had last time, so a smaller default never reaches people who already had
