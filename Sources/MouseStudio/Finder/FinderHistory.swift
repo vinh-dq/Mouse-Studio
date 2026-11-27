@@ -13,6 +13,16 @@ struct FinderHistory: Codable, Equatable {
         "w:\(bundleID ?? "?")|\(String(WindowSearch.normalize(title).prefix(80)))"
     }
 
+    /// A tab is remembered by its site, not its title, which changes with the page ("(3) Inbox").
+    static func tabKey(bundleID: String?, host: String) -> String {
+        "t:\(bundleID ?? "?")|\(String(WindowSearch.normalize(host).prefix(80)))"
+    }
+
+    static func key(for item: WindowItem) -> String {
+        if let tab = item.tab { return tabKey(bundleID: item.bundleID, host: tab.host) }
+        return windowKey(bundleID: item.bundleID, title: item.title)
+    }
+
     static func appKey(bundleID: String?) -> String {
         "a:\(bundleID ?? "?")"
     }
@@ -24,7 +34,7 @@ struct FinderHistory: Codable, Equatable {
         counts[windowKey, default: 0] += 1
         counts[appKey, default: 0] += 1
         // Few entries per text: the least picked windows make room.
-        let windows = counts.filter { $0.key.hasPrefix("w:") }
+        let windows = counts.filter { $0.key.hasPrefix("w:") || $0.key.hasPrefix("t:") }
         if windows.count > Self.maxWindowsPerQuery, let weakest = windows.min(by: { $0.value < $1.value }), weakest.key != windowKey {
             counts[weakest.key] = nil
         }
@@ -38,15 +48,26 @@ struct FinderHistory: Codable, Equatable {
     /// How much to raise a window that matches `query`. The same text counts fully, a longer or shorter text that
     /// starts the same way counts half (picking "sh" also helps "she").
     func boost(query: String, windowKey: String, appKey: String) -> Int {
+        booster(query: query)(windowKey, appKey)
+    }
+
+    /// The same as `boost`, with the typed text folded and the related entries picked out once, for scoring a whole list.
+    func booster(query: String) -> (_ windowKey: String, _ appKey: String) -> Int {
         let typed = WindowSearch.normalize(query).trimmingCharacters(in: .whitespaces)
-        guard !typed.isEmpty else { return 0 }
-        var total = 0.0
+        guard !typed.isEmpty else { return { _, _ in 0 } }
+        var related: [(weight: Double, counts: [String: Int])] = []
         for (text, counts) in picks {
             let weight: Double = text == typed ? 1 : (text.hasPrefix(typed) || typed.hasPrefix(text) ? 0.5 : 0)
-            guard weight > 0 else { continue }
-            total += weight * (Double(counts[windowKey] ?? 0) * 25 + Double(counts[appKey] ?? 0) * 8)
+            if weight > 0 { related.append((weight, counts)) }
         }
-        return min(150, Int(total))
+        guard !related.isEmpty else { return { _, _ in 0 } }
+        return { windowKey, appKey in
+            var total = 0.0
+            for (weight, counts) in related {
+                total += weight * (Double(counts[windowKey] ?? 0) * 25 + Double(counts[appKey] ?? 0) * 8)
+            }
+            return min(150, Int(total))
+        }
     }
 }
 
@@ -56,28 +77,24 @@ final class FinderHistoryStore {
     private(set) var history = FinderHistory()
     private let url: URL
 
-    init(directory: URL = ConfigStore.defaultDirectory) {
-        url = directory.appendingPathComponent("finder-history.json")
+    init(directory: URL = ConfigStore.defaultDirectory, fileName: String = "finder-history.json") {
+        url = directory.appendingPathComponent(fileName)
         if let data = try? Data(contentsOf: url), let loaded = try? JSONDecoder().decode(FinderHistory.self, from: data) {
             history = loaded
         }
     }
 
     func record(query: String, item: WindowItem) {
-        history.record(
-            query: query,
-            windowKey: FinderHistory.windowKey(bundleID: item.bundleID, title: item.title),
-            appKey: FinderHistory.appKey(bundleID: item.bundleID)
-        )
+        // What was open in a private window is never written down.
+        guard item.tab?.isPrivate != true else { return }
+        history.record(query: query, windowKey: FinderHistory.key(for: item), appKey: FinderHistory.appKey(bundleID: item.bundleID))
         save()
     }
 
-    func boost(query: String, item: WindowItem) -> Int {
-        history.boost(
-            query: query,
-            windowKey: FinderHistory.windowKey(bundleID: item.bundleID, title: item.title),
-            appKey: FinderHistory.appKey(bundleID: item.bundleID)
-        )
+    /// A scorer for one typed text, so the text is folded once for the whole list.
+    func booster(query: String) -> (WindowItem) -> Int {
+        let score = history.booster(query: query)
+        return { score(FinderHistory.key(for: $0), FinderHistory.appKey(bundleID: $0.bundleID)) }
     }
 
     func forget() {

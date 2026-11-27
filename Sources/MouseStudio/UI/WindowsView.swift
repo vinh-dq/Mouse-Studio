@@ -3,9 +3,40 @@ import SwiftUI
 struct WindowsView: View {
     @EnvironmentObject private var model: AppModel
     @LocalState private var hasScreenAccess = WindowThumbnailer.hasAccess
+    /// Which shortcut was just refused because the other list already uses it.
+    @LocalState private var refusedShortcut: FinderMode?
 
     private var store: ConfigStore { model.store }
     private var settings: WindowFinderSettings { store.config.windowFinder }
+
+    /// The two shortcuts must differ, or one of them would never be reached.
+    private var windowsShortcut: Binding<KeyCombo?> {
+        Binding(
+            get: { settings.shortcut },
+            set: { new in
+                if let new, new == settings.tabShortcut {
+                    refusedShortcut = .windows
+                } else {
+                    refusedShortcut = nil
+                    store.update { $0.windowFinder.shortcut = new }
+                }
+            }
+        )
+    }
+
+    private var tabsShortcut: Binding<KeyCombo?> {
+        Binding(
+            get: { settings.tabShortcut },
+            set: { new in
+                if let new, new == settings.shortcut {
+                    refusedShortcut = .tabs
+                } else {
+                    refusedShortcut = nil
+                    store.update { $0.windowFinder.tabShortcut = new }
+                }
+            }
+        )
+    }
 
     var body: some View {
         SettingsPage {
@@ -34,10 +65,10 @@ struct WindowsView: View {
                 SettingsDivider()
                 SettingRow(
                     title: "Shortcut",
-                    detail: "Opens the list and keeps it open: type, press ↩ to switch or esc to close. No need to hold anything."
+                    detail: "Opens the list and keeps it open: type, press ↩ to switch or esc to close. No need to hold anything. Press it again to search browser tabs, and once more to close."
                 ) {
                     HStack(spacing: 8) {
-                        KeyRecorder(combo: store.binding(\.windowFinder.shortcut), compact: true)
+                        KeyRecorder(combo: windowsShortcut, compact: true)
                             .frame(width: 170)
                         if settings.shortcut != nil {
                             Button { store.update { $0.windowFinder.shortcut = nil } } label: {
@@ -49,6 +80,9 @@ struct WindowsView: View {
                     }
                 }
                 .disabled(!settings.isEnabled)
+                if refusedShortcut == .windows {
+                    ShortcutWarning(text: "That shortcut already opens the tabs list. Choose another one.")
+                }
                 SettingsDivider()
                 PickerRow(title: "Key", selection: store.binding(\.windowFinder.key)) {
                     ForEach(FinderKey.allCases) { Text($0.title).tag($0) }
@@ -63,6 +97,45 @@ struct WindowsView: View {
                     format: "%.2f s"
                 )
                 .disabled(!settings.isEnabled)
+            }
+
+            SettingsGroup(
+                title: "Find Tabs",
+                footer: "Safari and Chromium browsers (Chrome, Edge, Brave, Vivaldi, Opera, Arc). macOS asks once for each browser before Mouse Studio may read its tabs. Titles and addresses are read only while the list is open; nothing is saved or sent anywhere, and what you pick in private windows is never remembered."
+            ) {
+                ToggleRow(
+                    title: "Search browser tabs",
+                    detail: "Press ⇥ in the list, or press the shortcut above a second time, to switch between windows and tabs.",
+                    isOn: store.binding(\.windowFinder.tabsEnabled)
+                )
+                .disabled(!settings.isEnabled)
+                SettingsDivider()
+                SettingRow(
+                    title: "Tabs shortcut",
+                    detail: "Opens the list straight on the tabs. Press it again to close, or from the windows to switch to the tabs."
+                ) {
+                    HStack(spacing: 8) {
+                        KeyRecorder(combo: tabsShortcut, compact: true)
+                            .frame(width: 170)
+                        if settings.tabShortcut != nil {
+                            Button { store.update { $0.windowFinder.tabShortcut = nil } } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove the shortcut")
+                        }
+                    }
+                }
+                .disabled(!settings.isEnabled || !settings.tabsEnabled)
+                if refusedShortcut == .tabs {
+                    ShortcutWarning(text: "That shortcut already opens the windows list. Choose another one.")
+                }
+                SettingsDivider()
+                ActionRow(
+                    title: "Open Automation Settings",
+                    detail: "Switch Mouse Studio on for each browser you want to search.",
+                    symbol: "lock.shield"
+                ) { Automation.openSettings() }
             }
 
             SettingsGroup(
@@ -91,13 +164,17 @@ struct WindowsView: View {
             }
 
             SettingsGroup(title: "In the list", footer: "You can also open the list with a mouse button: add a gesture in Buttons and choose Find Window.") {
-                ShortcutRow(keys: ["A", "B", "C"], text: "Filter by app name and window title; accents don't matter")
+                ShortcutRow(keys: ["A", "B", "C"], text: "Filter by app name and window title (or tab title and address); accents don't matter")
                 SettingsDivider()
-                ShortcutRow(keys: ["⇥", "←", "→", "↑", "↓"], text: "Choose a window, or move the pointer over one")
+                ShortcutRow(keys: ["⇥"], text: "Switch between searching windows and browser tabs")
+                SettingsDivider()
+                ShortcutRow(keys: ["←", "→", "↑", "↓"], text: "Choose a window, or move the pointer over one")
                 SettingsDivider()
                 ShortcutRow(keys: ["Space"], text: "Quick look at the chosen window")
                 SettingsDivider()
                 ShortcutRow(keys: ["⌘W", "⌘M"], text: "Close or minimize the chosen window")
+                SettingsDivider()
+                ShortcutRow(keys: ["⌘W"], text: "In the tabs: close the chosen tab")
                 SettingsDivider()
                 ShortcutRow(keys: ["⌘Q", "⌘H"], text: "Quit or hide the app of that window")
                 SettingsDivider()
@@ -111,6 +188,19 @@ struct WindowsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             hasScreenAccess = WindowThumbnailer.hasAccess
         }
+    }
+}
+
+private struct ShortcutWarning: View {
+    let text: LocalizedStringKey
+
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.triangle.fill")
+            .font(.system(size: 12))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

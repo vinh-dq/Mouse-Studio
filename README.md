@@ -37,6 +37,7 @@ keeps everything on your Mac and sends nothing anywhere.
 | **Keys while scrolling** | ⇧ scrolls sideways, ⌘ zooms, ⌃ scrolls faster, ⌥ scrolls precisely (all changeable). |
 | **Leave some apps alone** | Turn Mouse Studio off in games, remote desktops and virtual machines. |
 | **Find Windows** | Hold Right Option, type part of a window's title, let go to jump there. Glass list with previews. |
+| **Find Tabs** | Press the shortcut again (or press ⇥) to search the tabs of Safari, Chrome and other Chromium browsers, and jump to the exact tab. |
 | **Per-mouse settings** | Switch Mouse Studio off for one mouse, or give it its own speed and Drag Scroll settings. |
 | **Menu bar** | Pause, reverse the scroll direction or skip the app in front with one click. |
 | **English and Vietnamese** | Pick the language in General. |
@@ -159,7 +160,9 @@ Choose the **Look** in the tab: a list with a large picture of the chosen window
 | Key | What it does |
 |---|---|
 | letters | Filter by app name and window title |
-| ⇥ ← → ↑ ↓ | Choose a window (or move the pointer over one) |
+| ← → ↑ ↓ | Choose a window (or move the pointer over one) |
+| ⇥ | Switch between windows and browser tabs |
+| ⌘W (in the tabs) | Close the chosen tab |
 | Space | Quick look at the chosen window (when nothing is typed) |
 | ⌘W · ⌘M | Close · minimize the chosen window |
 | ⌘Q · ⌘H | Quit · hide its app |
@@ -169,6 +172,30 @@ Letting go of the key switches only if you typed, chose or looked at a window; o
 Pictures of the windows need **Screen Recording** access; without it the list shows app icons. Mouse Studio only reads
 titles and takes the pictures while the list is open. Windows on other desktops are listed when Screen Recording is allowed.
 You can also open the list with any mouse button: add a gesture and choose **Find Window**.
+
+#### Find Tabs
+
+<img src="docs/images/finder-tabs.png" width="640" alt="The tab list, grouped by browser window">
+
+The same list can search the **tabs of your browsers**: Safari and Chromium browsers (Chrome, Edge, Brave, Vivaldi, Opera, Arc).
+Pick the way that suits you; they never get in each other's way:
+
+| Do this | What happens |
+|---|---|
+| Press the **windows shortcut** a second time | The list switches from windows to tabs (what you typed stays). A third press closes it. |
+| Press **⇥** (Tab) | Switches between windows and tabs, back and forth. Choose with the arrow keys. |
+| Click **Windows** or **Tabs** in the search line | Same switch, with the mouse. |
+| Press the **tabs shortcut** (record it in Windows → Find Tabs) | Opens the list straight on the tabs. Press it again to close, or from the windows list to switch to the tabs. |
+
+Holding the key opens only the windows. The two shortcuts must be different.
+Tabs are grouped by browser window (the window you are in first), the current tab of each window is marked with a dot, and the list opens on the tab you are in.
+While you type, the best matches come first across all windows; the search looks at the title **and** the address (`docs sheets`, `github pulls`).
+<img src="docs/images/finder-tabs-search.png" width="640" alt="The tab list, filtered by typing">
+
+Press ↩ and Mouse Studio selects that very tab, raises its window and goes to the desktop it is on. Tabs of private windows are listed, but what you pick there is never remembered.
+
+macOS asks once for each browser whether Mouse Studio may control it (**Automation**). Mouse Studio only reads titles and addresses while the list is open; nothing is saved or sent anywhere.
+If you said no, the list tells you and the **Open Settings** link takes you to Privacy & Security → Automation. Firefox can't be searched: it doesn't offer a way to read its tabs.
 
 ### Apps
 <img src="docs/images/apps.png" width="440" align="right" alt="Apps tab">

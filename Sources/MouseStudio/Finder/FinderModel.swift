@@ -2,7 +2,7 @@ import AppKit
 
 /// Sizes of the finder's panel. The panel is a glass card with room around it for its shadow.
 enum FinderMetrics {
-    static let inset: CGFloat = 32
+    static let inset: CGFloat = 48
     static let width: CGFloat = 760
     static let searchHeight: CGFloat = 62
     static let hintHeight: CGFloat = 42
@@ -25,16 +25,40 @@ enum FinderMetrics {
     static let listPadding: CGFloat = 10
     static let splitMinBody: CGFloat = 330
     static let splitMaxRows = 8
+    static let groupHeaderHeight: CGFloat = 32
+    static let noticeHeight: CGFloat = 36
 
     static func width(for layout: FinderLayout) -> CGFloat {
         layout == .split ? splitWidth : width
     }
 }
 
-/// What the finder shows: the windows, what was typed, which one is selected.
+/// What the finder looks through: the open windows, or the tabs of the browsers.
+enum FinderMode: Sendable {
+    case windows, tabs
+}
+
+/// The line above the tabs of one browser window, shown while nothing is typed.
+struct TabGroupHeader {
+    let browser: String
+    /// "Window 2", when the browser has more than one.
+    let window: String?
+    /// What the window was named, when that says more than its current tab.
+    let name: String?
+    let count: Int
+    let icon: NSImage?
+}
+
+/// What the finder shows: the windows or tabs, what was typed, which one is selected.
 @MainActor
 final class FinderModel: ObservableObject {
-    @Published private(set) var items: [WindowItem] = []
+    @Published private(set) var windowItems: [WindowItem] = []
+    @Published private(set) var tabItems: [WindowItem] = []
+    @Published private(set) var mode = FinderMode.windows
+    @Published private(set) var loading: Set<FinderMode> = []
+    @Published private(set) var tabNotices: [TabNotice] = []
+    /// First tab of each browser window → the line to draw above it. Only while nothing is typed.
+    @Published private(set) var groupHeaders: [String: TabGroupHeader] = [:]
     @Published private(set) var results: [WindowItem] = []
     @Published private(set) var query = ""
     @Published private(set) var selection = 0
@@ -48,27 +72,60 @@ final class FinderModel: ObservableObject {
     /// Whether windows are shown as pictures (previews on, and Screen Recording allowed).
     @Published private(set) var showsPictures = false
     @Published private(set) var layout = FinderLayout.split
+    /// Whether browser tabs can be searched; without it the Windows/Tabs switch is not shown.
+    @Published private(set) var tabsEnabled = true
+
+    /// The list being searched.
+    var items: [WindowItem] { mode == .windows ? windowItems : tabItems }
+    var isLoading: Bool { loading.contains(mode) }
+    /// Tabs are always a list with details, whatever layout the windows use.
+    var activeLayout: FinderLayout { mode == .tabs ? .split : layout }
+    var hasTypedText: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     /// True once the user typed, selected or previewed something. Letting go of the key then switches windows.
     private(set) var interacted = false
     var maxVisibleRows = 3
+    /// Rows the list-with-details can show; the cards layout has fewer rows than a list when tabs are shown.
+    var maxListRows = 3
     var onCommit: ((Int) -> Void)?
+    /// A click on "Windows" or "Tabs" in the search line.
+    var onSetMode: ((FinderMode) -> Void)?
     /// Extra score for windows the user has picked before for what they typed.
     var boost: ((String, WindowItem) -> Int)?
+    /// The same, made once for a typed text, so a long list isn't prepared again for every item.
+    var boosterFor: ((String) -> (WindowItem) -> Int)?
+    private var folded: [String: FoldedWindow] = [:]
 
-    var panelWidth: CGFloat { FinderMetrics.width(for: layout) }
+    var panelWidth: CGFloat { FinderMetrics.width(for: activeLayout) }
 
     private var openedPointer = NSEvent.mouseLocation
     private var pointerMoved = false
 
     var selected: WindowItem? { results.indices.contains(selection) ? results[selection] : nil }
 
-    func begin(items: [WindowItem], releaseKey: String?, showsPictures: Bool, layout: FinderLayout, maxVisibleRows: Int) {
+    func begin(
+        items: [WindowItem],
+        releaseKey: String?,
+        showsPictures: Bool,
+        layout: FinderLayout,
+        maxVisibleRows: Int,
+        mode: FinderMode = .windows,
+        tabs: [WindowItem] = [],
+        maxListRows: Int? = nil,
+        tabsEnabled: Bool = true
+    ) {
+        self.tabsEnabled = tabsEnabled
         self.layout = layout
-        self.items = items
+        self.mode = mode
+        windowItems = items
+        tabItems = tabs
+        tabNotices = []
+        loading = []
+        fold(items + tabs)
         self.releaseKey = releaseKey
         self.showsPictures = showsPictures
         self.maxVisibleRows = maxVisibleRows
+        self.maxListRows = maxListRows ?? maxVisibleRows
         query = ""
         interacted = false
         isPreviewing = false
@@ -80,7 +137,13 @@ final class FinderModel: ObservableObject {
     }
 
     func clear() {
-        items = []
+        windowItems = []
+        tabItems = []
+        tabNotices = []
+        groupHeaders = [:]
+        loading = []
+        folded = [:]
+        mode = .windows
         results = []
         thumbnails = [:]
         previewImage = nil
@@ -90,13 +153,51 @@ final class FinderModel: ObservableObject {
 
     /// A fresh list (after a window was closed, say): the query and the selected window are kept where possible.
     func replace(items: [WindowItem]) {
-        self.items = items
-        // Until the user does something, the list may still be a cached one; the choice follows the fresh order.
-        refilter(keeping: interacted ? selected?.id : nil)
+        windowItems = items
+        fold(items)
+        loading.remove(.windows)
+        if mode == .windows {
+            // Until the user does something, the list may still be a cached one; the choice follows the fresh order.
+            refilter(keeping: interacted ? selected?.id : nil)
+        }
+    }
+
+    /// The tabs just read from the browsers (or the ones that couldn't be read, with the reason).
+    func replace(tabs: [WindowItem], notices: [TabNotice]) {
+        tabItems = tabs
+        tabNotices = notices
+        fold(tabs)
+        loading.remove(.tabs)
+        if mode == .tabs {
+            refilter(keeping: interacted ? selected?.id : nil)
+        }
+    }
+
+    func dropReleaseKey() {
+        releaseKey = nil
+    }
+
+    func setLoading(_ mode: FinderMode, _ isLoading: Bool) {
+        if isLoading { loading.insert(mode) } else { loading.remove(mode) }
+    }
+
+    /// Switches between windows and tabs. What was typed stays.
+    func setMode(_ new: FinderMode) {
+        guard new != mode else { return }
+        mode = new
+        isPreviewing = false
+        previewImage = nil
+        interacted = true
+        refilter(keeping: nil)
+    }
+
+    func removeTab(id: String) {
+        tabItems.removeAll { $0.id == id }
+        refilter(keeping: nil, nearIndex: selection)
     }
 
     func remove(id: String) {
-        items.removeAll { $0.id == id }
+        windowItems.removeAll { $0.id == id }
         refilter(keeping: nil, nearIndex: selection)
     }
 
@@ -133,7 +234,7 @@ final class FinderModel: ObservableObject {
     /// Up and down move one row; at the first or last row they stay where they are.
     func moveRow(_ rows: Int) {
         guard !results.isEmpty else { return }
-        if layout == .split {
+        if activeLayout == .split {
             move(rows)
             return
         }
@@ -161,7 +262,7 @@ final class FinderModel: ObservableObject {
     }
 
     func togglePreview() {
-        guard selected != nil, layout == .cards else { return }
+        guard selected != nil, activeLayout == .cards else { return }
         isPreviewing.toggle()
         previewImage = nil
         interacted = true
@@ -178,30 +279,82 @@ final class FinderModel: ObservableObject {
 
     // MARK: Private
 
+    private func fold(_ list: [WindowItem]) {
+        for item in list where folded[item.id] == nil { folded[item.id] = FoldedWindow(item) }
+        // Items that are gone are dropped now and then, so the table doesn't grow over a long session.
+        if folded.count > 4 * (windowItems.count + tabItems.count) + 64 {
+            let live = Set((windowItems + tabItems).map(\.id))
+            folded = folded.filter { live.contains($0.key) }
+        }
+    }
+
     private func refilter(keeping id: String?, nearIndex: Int? = nil) {
-        let boost = self.boost
         let typed = query
-        results = WindowSearch.filter(items, query: query) { boost?(typed, $0) ?? 0 }
+        let booster = boosterFor?(typed)
+        let boost = self.boost
+        let table = folded
+        results = WindowSearch.filter(
+            items,
+            query: query,
+            folded: { table[$0.id] ?? FoldedWindow($0) },
+            boost: { booster?($0) ?? boost?(typed, $0) ?? 0 }
+        )
         if let id, let index = results.firstIndex(where: { $0.id == id }) {
             selection = index
         } else if let nearIndex {
             selection = min(nearIndex, max(0, results.count - 1))
         } else {
-            // With nothing typed, the window just left is first, so the one before it is the natural choice.
-            selection = query.isEmpty && results.count > 1 ? 1 : 0
+            selection = defaultSelection()
         }
+        groupHeaders = mode == .tabs && !hasTypedText ? Self.headers(for: results) : [:]
         if results.isEmpty { isPreviewing = false }
         updateHeight()
     }
 
+    private func defaultSelection() -> Int {
+        guard !hasTypedText else { return 0 }
+        if mode == .tabs {
+            // Where you are now, so the arrows start from it.
+            return results.firstIndex { $0.tab?.isActive == true } ?? 0
+        }
+        // With nothing typed, the window just left is first, so the one before it is the natural choice.
+        return results.count > 1 ? 1 : 0
+    }
+
+    /// One header per browser window, in the order the tabs come.
+    private static func headers(for tabs: [WindowItem]) -> [String: TabGroupHeader] {
+        var result: [String: TabGroupHeader] = [:]
+        var index = 0
+        while index < tabs.count {
+            guard let first = tabs[index].tab else { index += 1; continue }
+            var end = index
+            while end < tabs.count, tabs[end].pid == tabs[index].pid, tabs[end].tab?.windowID == first.windowID { end += 1 }
+            let group = tabs[index..<end]
+            let active = group.first { $0.tab?.isActive == true }?.title
+            let named = first.windowName.isEmpty || first.windowName == active || group.contains { $0.title == first.windowName } ? nil : first.windowName
+            result[tabs[index].id] = TabGroupHeader(
+                browser: tabs[index].appName,
+                window: first.windowCount > 1 ? String(localized: "Window \(first.windowNumber)") : nil,
+                name: named,
+                count: group.count,
+                icon: tabs[index].icon
+            )
+            index = end
+        }
+        return result
+    }
+
     private func updateHeight() {
-        let chrome = FinderMetrics.searchHeight + FinderMetrics.hintHeight
+        var chrome = FinderMetrics.searchHeight + FinderMetrics.hintHeight
+        if mode == .tabs, !tabNotices.isEmpty { chrome += FinderMetrics.noticeHeight }
         let body: CGFloat
         if results.isEmpty {
             body = FinderMetrics.emptyHeight
-        } else if layout == .split {
-            let rows = CGFloat(min(results.count, min(maxVisibleRows, FinderMetrics.splitMaxRows)))
-            body = max(FinderMetrics.splitMinBody, rows * FinderMetrics.rowHeight + 2 * FinderMetrics.listPadding)
+        } else if activeLayout == .split {
+            let cap = min(layout == .split ? maxVisibleRows : maxListRows, FinderMetrics.splitMaxRows)
+            let content = CGFloat(results.count) * FinderMetrics.rowHeight + CGFloat(groupHeaders.count) * FinderMetrics.groupHeaderHeight
+            let shown = min(content, CGFloat(cap) * FinderMetrics.rowHeight + CGFloat(min(groupHeaders.count, 1)) * FinderMetrics.groupHeaderHeight)
+            body = max(FinderMetrics.splitMinBody, shown + 2 * FinderMetrics.listPadding)
         } else if isPreviewing {
             body = FinderMetrics.previewHeight
         } else {

@@ -95,6 +95,26 @@ enum WindowCatalog {
         return result
     }
 
+    static func windowID(of element: AXUIElement) -> CGWindowID? {
+        var id: CGWindowID = 0
+        return _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
+    }
+
+    static func isMinimized(_ element: AXUIElement) -> Bool {
+        attribute(element, kAXMinimizedAttribute) ?? false
+    }
+
+    /// Where a window is on screen, in the same coordinates the window server uses.
+    static func frame(of element: AXUIElement) -> CGRect? {
+        var value: CFTypeRef?
+        var origin = CGPoint.zero
+        guard let size = size(of: element),
+              AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID(),
+              AXValueGetValue(value as! AXValue, .cgPoint, &origin) else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+
     static func size(of element: AXUIElement) -> CGSize? {
         var value: CFTypeRef?
         var size = CGSize.zero

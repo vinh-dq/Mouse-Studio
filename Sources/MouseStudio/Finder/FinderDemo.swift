@@ -16,7 +16,7 @@ extension FinderDemo {
     private static var environment: [String: String] { ProcessInfo.processInfo.environment }
 
     /// Shows the finder with made-up windows. `MOUSESTUDIO_DEMO` is "finder" for that, anything else for the
-    /// settings window only. Also: `_LAYOUT` (split/cards), `_QUERY`, `_LANG` (vi), `_BACKDROP`.
+    /// settings window only. Also: `_LAYOUT` (split/cards), `_QUERY`, `_LANG` (vi), `_BACKDROP` (white/dark), `_MODE` (tabs).
     static func run() {
         if environment["MOUSESTUDIO_DEMO"] != "finder" {
             // The settings window, tall enough to show most of a tab.
@@ -28,7 +28,49 @@ extension FinderDemo {
         showBackdrop()
         let (items, pictures) = windows(vietnamese: vietnamese)
         let layout = FinderLayout(rawValue: environment["MOUSESTUDIO_DEMO_LAYOUT"] ?? "") ?? .split
-        WindowFinder.shared.showDemo(items: items, pictures: pictures, layout: layout, query: environment["MOUSESTUDIO_DEMO_QUERY"] ?? "")
+        let tabs = environment["MOUSESTUDIO_DEMO_MODE"] == "tabs" ? demoTabs() : nil
+        WindowFinder.shared.showDemo(items: items, pictures: pictures, layout: layout, query: environment["MOUSESTUDIO_DEMO_QUERY"] ?? "", tabs: tabs)
+    }
+
+    /// Made-up tabs in two Chrome windows and one Safari window, for screenshots (`MOUSESTUDIO_DEMO_MODE=tabs`).
+    private static func demoTabs() -> [WindowItem] {
+        let chrome = icon("/Applications/Google Chrome.app")
+        let safari = icon("/Applications/Safari.app")
+        struct Spec { var title: String; var url: String }
+        let windows: [(app: String, id: String, family: BrowserFamily, name: String, active: Int, icon: NSImage, tabs: [Spec])] = [
+            ("Google Chrome", "com.google.Chrome", .chromium, "", 2, chrome, [
+                Spec(title: "Sprint 50 Backlog - Google Sheets", url: "https://docs.google.com/spreadsheets/d/1abc/edit"),
+                Spec(title: "Pull requests · acme/web-automation", url: "https://github.com/acme/web-automation/pulls"),
+                Spec(title: "Test Case - Google Sheets", url: "https://docs.google.com/spreadsheets/d/2def/edit"),
+                Spec(title: "Dashboard | Portal", url: "https://portal.example.com/"),
+                Spec(title: "Bug #107 · Issue · acme/backlog", url: "https://github.com/acme/backlog/issues/107"),
+            ]),
+            ("Google Chrome", "com.google.Chrome", .chromium, "research", 1, chrome, [
+                Spec(title: "Claude Certified Architect — Practice Exam", url: "https://examcademy.com/exams/anthropic/cca-f/1"),
+                Spec(title: "Meeting plan - Google Gemini", url: "https://gemini.google.com/app/9ea5"),
+                Spec(title: "Swift Concurrency — Apple Developer", url: "https://developer.apple.com/documentation/swift/concurrency"),
+            ]),
+            ("Safari", "com.apple.Safari", .safari, "", 1, safari, [
+                Spec(title: "Mouse Studio — Release notes", url: "https://example.com/mouse-studio/releases"),
+                Spec(title: "Weather", url: "https://weather.example.org/"),
+            ]),
+        ]
+        var items: [WindowItem] = []
+        for (windowIndex, window) in windows.enumerated() {
+            for (index, spec) in window.tabs.enumerated() {
+                let tab = BrowserTab(
+                    family: window.family, windowID: 100 + windowIndex, windowNumber: window.app == "Safari" ? 1 : windowIndex + 1,
+                    windowCount: window.app == "Safari" ? 1 : 2, windowName: window.name, windowTabCount: window.tabs.count,
+                    tabIndex: index + 1, tabKey: "\(index + 1)", url: spec.url, isActive: window.active == index + 1, isPrivate: false
+                )
+                items.append(WindowItem(
+                    id: "tab\(windowIndex)-\(index)", pid: Int32(10 + windowIndex), windowID: nil, appName: window.app, bundleID: window.id,
+                    title: spec.title, isMinimized: false, isOnOtherSpace: false, isAppHidden: false, element: nil, size: nil,
+                    icon: window.icon, tab: tab
+                ))
+            }
+        }
+        return items
     }
 
     /// A plain soft backdrop, so a screenshot shows the glass over something neutral and not the real desktop.
@@ -39,6 +81,25 @@ extension FinderDemo {
         window.isOpaque = true
         window.backgroundColor = .black
         let image = NSImage(size: screen.frame.size, flipped: false) { rect in
+            switch environment["MOUSESTUDIO_DEMO_BACKDROP"] {
+            case "white":
+                NSColor.white.setFill()
+                rect.fill()
+                return true
+            case "stripes":
+                NSColor.white.setFill()
+                rect.fill()
+                for i in 0..<Int(rect.width / 60) {
+                    [NSColor.systemRed, .systemBlue, .systemGreen, .systemOrange][i % 4].setFill()
+                    NSRect(x: CGFloat(i) * 60, y: 0, width: 30, height: rect.height).fill()
+                }
+                return true
+            case "dark":
+                NSColor(calibratedWhite: 0.12, alpha: 1).setFill()
+                rect.fill()
+                return true
+            default: break
+            }
             NSGradient(colors: [
                 NSColor(calibratedRed: 0.36, green: 0.52, blue: 0.86, alpha: 1),
                 NSColor(calibratedRed: 0.62, green: 0.45, blue: 0.82, alpha: 1),
@@ -141,11 +202,16 @@ extension FinderDemo {
 
 @MainActor
 extension WindowFinder {
-    func showDemo(items: [WindowItem], pictures: [String: NSImage], layout: FinderLayout, query: String) {
+    func showDemo(items: [WindowItem], pictures: [String: NSImage], layout: FinderLayout, query: String, tabs: [WindowItem]? = nil) {
         var demo = WindowFinderSettings()
         demo.layout = layout
         apply(demo)
-        show(items, byHold: true)
+        if let tabs {
+            show(items, byHold: false, mode: .tabs, tabs: tabs)
+            model.replace(tabs: tabs, notices: [])
+        } else {
+            show(items, byHold: true)
+        }
         for (id, image) in pictures { model.setThumbnail(image, for: id) }
         model.setPreview(nil)
         if !query.isEmpty { model.type(query) }

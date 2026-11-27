@@ -37,6 +37,7 @@ Mọi dữ liệu chỉ nằm trên máy Mac của bạn, không gửi đi đâu
 | **Phím khi lăn** | ⇧ cuộn ngang, ⌘ zoom, ⌃ cuộn nhanh, ⌥ cuộn chậm chính xác (đổi được). |
 | **Bỏ qua một số ứng dụng** | Tắt Mouse Studio trong game, máy tính từ xa và máy ảo. |
 | **Tìm cửa sổ** | Giữ Option bên phải, gõ một phần tiêu đề cửa sổ, thả phím để chuyển tới đó. Danh sách kính có ảnh xem trước. |
+| **Tìm tab** | Nhấn phím tắt lần nữa (hoặc nhấn ⇥) để tìm trong các tab của Safari, Chrome và trình duyệt Chromium khác, rồi nhảy đúng tới tab đó. |
 | **Cài đặt riêng cho từng chuột** | Tắt Mouse Studio cho một chuột, hoặc cho nó tốc độ và Kéo để cuộn riêng. |
 | **Thanh menu** | Tạm dừng, đảo chiều cuộn hoặc bỏ qua ứng dụng đang mở chỉ với một cú nhấp. |
 | **Tiếng Anh và tiếng Việt** | Chọn ngôn ngữ trong tab Chung. |
@@ -150,7 +151,9 @@ Nhấn nhanh, hoặc nhấn phím khác sớm hơn, thì phím vẫn thuộc v�
 | Phím | Tác dụng |
 |---|---|
 | chữ cái | Lọc theo tên ứng dụng và tiêu đề cửa sổ |
-| ⇥ ← → ↑ ↓ | Chọn cửa sổ (hoặc rê chuột lên cửa sổ đó) |
+| ← → ↑ ↓ | Chọn cửa sổ (hoặc rê chuột lên cửa sổ đó) |
+| ⇥ | Chuyển giữa cửa sổ và tab trình duyệt |
+| ⌘W (ở danh sách tab) | Đóng tab đang chọn |
 | Space | Xem nhanh cửa sổ đang chọn (khi chưa gõ gì) |
 | ⌘W · ⌘M | Đóng · thu nhỏ cửa sổ đang chọn |
 | ⌘Q · ⌘H | Thoát · ẩn ứng dụng của cửa sổ đó |
@@ -160,6 +163,30 @@ Thả phím chỉ chuyển cửa sổ khi bạn đã gõ, đã chọn hoặc đa
 Ảnh xem trước cần quyền **Ghi màn hình**; không có quyền này, danh sách hiện biểu tượng ứng dụng. Mouse Studio chỉ đọc tiêu đề
 và chụp ảnh khi danh sách đang mở. Cửa sổ ở màn hình nền khác chỉ hiện khi đã cho phép Ghi màn hình.
 Bạn cũng có thể mở danh sách bằng một nút chuột bất kỳ: thêm cử chỉ và chọn **Tìm cửa sổ**.
+
+#### Tìm tab
+
+<img src="docs/images/vi/finder-tabs.png" width="640" alt="Danh sách tab, xếp theo cửa sổ trình duyệt">
+
+Cũng danh sách đó có thể tìm trong **các tab của trình duyệt**: Safari và các trình duyệt Chromium (Chrome, Edge, Brave, Vivaldi, Opera, Arc).
+Bạn chọn cách nào tiện nhất; các cách không xung đột với nhau:
+
+| Thao tác | Kết quả |
+|---|---|
+| Nhấn **phím tắt tìm cửa sổ** lần thứ hai | Danh sách chuyển từ cửa sổ sang tab (chữ đã gõ được giữ lại). Nhấn lần thứ ba để đóng. |
+| Nhấn **⇥** (Tab) | Chuyển qua lại giữa cửa sổ và tab. Chọn bằng phím mũi tên. |
+| Bấm **Cửa sổ** hoặc **Tab** trên dòng tìm kiếm | Chuyển như trên, bằng chuột. |
+| Nhấn **phím tắt tìm tab** (ghi trong Cửa sổ → Tìm tab) | Mở danh sách ngay ở phần tab. Nhấn lần nữa để đóng; nếu đang ở danh sách cửa sổ thì chuyển sang tab. |
+
+Giữ phím chỉ mở danh sách cửa sổ. Hai phím tắt phải khác nhau.
+Tab được xếp theo từng cửa sổ trình duyệt (cửa sổ bạn đang dùng ở đầu), tab hiện tại của mỗi cửa sổ có chấm xanh, và danh sách mở sẵn ở tab bạn đang đứng.
+Khi gõ, kết quả khớp nhất lên đầu trên mọi cửa sổ; việc tìm xét cả tiêu đề **lẫn** địa chỉ (`docs sheets`, `github pulls`).
+<img src="docs/images/vi/finder-tabs-search.png" width="640" alt="Danh sách tab, lọc theo chữ đã gõ">
+
+Nhấn ↩ là Mouse Studio chọn đúng tab đó, đưa cửa sổ của nó lên và chuyển tới màn hình nền chứa cửa sổ. Tab trong cửa sổ riêng tư vẫn hiện, nhưng lựa chọn của bạn ở đó không bao giờ được ghi nhớ.
+
+macOS sẽ hỏi một lần cho mỗi trình duyệt xem Mouse Studio có được điều khiển nó không (**Tự động hóa**). Mouse Studio chỉ đọc tiêu đề và địa chỉ khi danh sách đang mở; không có gì được lưu hay gửi đi.
+Nếu bạn đã từ chối, danh sách sẽ báo và liên kết **Mở Cài đặt** đưa bạn tới Quyền riêng tư & Bảo mật → Tự động hóa. Firefox chưa tìm được vì không có cách chính thức để đọc tab của nó.
 
 <br clear="all">
 
