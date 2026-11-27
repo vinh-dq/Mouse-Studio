@@ -72,6 +72,10 @@ struct WindowFinderSettings: Codable, Equatable, Sendable {
     /// Opens the list and keeps it open (type, ↩ to switch, esc to cancel), without holding anything.
     var shortcut: KeyCombo?
     var layout = FinderLayout.split
+    /// Search the tabs of Safari and Chromium browsers too: press the shortcut again, or type "@", to switch to them.
+    var tabsEnabled = true
+    /// Opens the list straight on the tabs. Never the same as `shortcut`, which opens it on the windows.
+    var tabShortcut: KeyCombo?
     /// What you pick for what you typed moves that window up next time.
     var rememberChoices = true
 
@@ -86,12 +90,15 @@ struct WindowFinderSettings: Codable, Equatable, Sendable {
         showPreviews = try container.decodeIfPresent(Bool.self, forKey: .showPreviews) ?? defaults.showPreviews
         shortcut = try? container.decodeIfPresent(KeyCombo.self, forKey: .shortcut)
         layout = (try? container.decodeIfPresent(FinderLayout.self, forKey: .layout)) ?? defaults.layout
+        tabsEnabled = try container.decodeIfPresent(Bool.self, forKey: .tabsEnabled) ?? defaults.tabsEnabled
+        tabShortcut = try? container.decodeIfPresent(KeyCombo.self, forKey: .tabShortcut)
         rememberChoices = try container.decodeIfPresent(Bool.self, forKey: .rememberChoices) ?? defaults.rememberChoices
     }
 
     func clamped() -> WindowFinderSettings {
         var copy = self
         copy.delay = delay.clamped(to: Self.delayRange)
+        if copy.tabShortcut != nil, copy.tabShortcut == copy.shortcut { copy.tabShortcut = nil }
         return copy
     }
 }

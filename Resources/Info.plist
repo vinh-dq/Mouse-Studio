@@ -11,13 +11,14 @@
     <key>CFBundleName</key><string>Mouse Studio</string>
     <key>CFBundleDisplayName</key><string>Mouse Studio</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.3.0</string>
-    <key>CFBundleVersion</key><string>4</string>
+    <key>CFBundleShortVersionString</key><string>1.4.0</string>
+    <key>CFBundleVersion</key><string>5</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSAppleEventsUsageDescription</key><string>Mouse Studio reads the tab titles and addresses of your browsers so you can search and switch between them. Nothing is saved or sent anywhere.</string>
     <key>NSHumanReadableCopyright</key><string>Mouse Studio runs entirely on your Mac.</string>
 </dict>
 </plist>

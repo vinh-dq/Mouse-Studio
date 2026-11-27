@@ -55,6 +55,10 @@ final class WindowFinder {
     /// The last list of windows, shown at once on the next opening and then refreshed.
     private var cache: (items: [WindowItem], date: Date)?
     private let history = FinderHistoryStore()
+    /// What was picked among tabs; kept apart, so a site you often pick doesn't push windows around.
+    private let tabHistory = FinderHistoryStore(fileName: "finder-tab-history.json")
+    /// The last tabs read from the browsers, shown at once on the next opening and then refreshed.
+    private var tabCache: (snapshot: TabSnapshot, date: Date)?
     private var clickMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     private let thumbnailer = WindowThumbnailer()
@@ -80,9 +84,21 @@ final class WindowFinder {
                 self?.noteActivated(app.processIdentifier)
             }
             .store(in: &cancellables)
-        FinderHotKey.shared.onPressed = { [unowned self] in if AXIsProcessTrusted() { toggle() } }
+        FinderHotKey.shared.onPressed = { [unowned self] kind in
+            guard AXIsProcessTrusted() else { return }
+            switch kind {
+            case .windows: windowsShortcutPressed()
+            case .tabs: tabsShortcutPressed()
+            }
+        }
         model.onCommit = { [unowned self] index in commit(index: index) }
-        model.boost = { [unowned self] query, item in settings.rememberChoices ? history.boost(query: query, item: item) : 0 }
+        model.onSetMode = { [unowned self] mode in mode == .tabs ? showTabs() : showWindows() }
+        model.boosterFor = { [unowned self] query in
+            guard settings.rememberChoices else { return { _ in 0 } }
+            let windows = history.booster(query: query)
+            let tabs = tabHistory.booster(query: query)
+            return { item in item.tab != nil ? tabs(item) : windows(item) }
+        }
         // Build the panel now, so the first opening isn't the slow one.
         DispatchQueue.main.async { [unowned self] in if panel == nil { panel = makePanel() } }
         let missing = SkyLight.missing
@@ -98,6 +114,11 @@ final class WindowFinder {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.selectionChanged() }
             .store(in: &cancellables)
+        model.$mode
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.resizePanel() }
+            .store(in: &cancellables)
         model.$isPreviewing
             .removeDuplicates()
             .receive(on: RunLoop.main)
@@ -108,17 +129,42 @@ final class WindowFinder {
     func apply(_ settings: WindowFinderSettings) {
         self.settings = settings
         FinderTrigger.shared.configure(isEnabled: settings.isEnabled, key: settings.key)
-        FinderHotKey.shared.register(settings.isEnabled ? settings.shortcut : nil)
+        FinderHotKey.shared.register(settings.isEnabled ? settings.shortcut : nil, for: .windows)
+        FinderHotKey.shared.register(settings.isEnabled && settings.tabsEnabled ? settings.tabShortcut : nil, for: .tabs)
         if !settings.isEnabled { cancelPending() }
     }
 
     func forgetHistory() {
         history.forget()
+        tabHistory.forget()
     }
 
     /// Opens the list and keeps it open until a window is chosen or it is cancelled (for a mouse button).
     func toggle() {
         if isShown { close() } else { present(byHold: false) }
+    }
+
+    /// The windows shortcut: opens the windows, and pressed again goes on to the tabs, and once more closes.
+    private func windowsShortcutPressed() {
+        if !isShown {
+            present(byHold: false)
+        } else if model.mode == .windows, settings.tabsEnabled {
+            showTabs()
+        } else {
+            close()
+        }
+    }
+
+    /// The tabs shortcut: opens the tabs, switches to them from the windows, or closes when already there.
+    private func tabsShortcutPressed() {
+        guard settings.tabsEnabled else { return }
+        if !isShown {
+            presentTabs()
+        } else if model.mode == .windows {
+            showTabs()
+        } else {
+            close()
+        }
     }
 
     private func noteActivated(_ pid: pid_t) {
@@ -252,14 +298,15 @@ final class WindowFinder {
         return items
     }
 
-    func show(_ items: [WindowItem], byHold: Bool) {
+    func show(_ items: [WindowItem], byHold: Bool, mode: FinderMode = .windows, tabs: [WindowItem] = []) {
         let screen = Self.screenUnderPointer()
         let showsPictures = settings.showPreviews && WindowThumbnailer.hasAccess
         let visible = screen.visibleFrame
         let layout = settings.layout
         let room = visible.height * 0.78 - 2 * FinderMetrics.inset - FinderMetrics.searchHeight - FinderMetrics.hintHeight
+        let listRows = max(1, Int(room / FinderMetrics.rowHeight))
         let rows = layout == .split
-            ? Int(room / FinderMetrics.rowHeight)
+            ? listRows
             : min(3, Int(room / (FinderMetrics.cardHeight + FinderMetrics.spacing)))
         model.isVisible = false
         model.begin(
@@ -267,7 +314,11 @@ final class WindowFinder {
             releaseKey: byHold ? settings.key.symbol : nil,
             showsPictures: showsPictures,
             layout: layout,
-            maxVisibleRows: max(1, rows)
+            maxVisibleRows: max(1, rows),
+            mode: mode,
+            tabs: tabs,
+            maxListRows: listRows,
+            tabsEnabled: settings.tabsEnabled
         )
 
         let panel = self.panel ?? makePanel()
@@ -283,8 +334,83 @@ final class WindowFinder {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
             Task { @MainActor in self?.close() }
         }
-        if showsPictures && !FinderDemo.isActive { loadThumbnails() }
+        if showsPictures && !FinderDemo.isActive && mode == .windows { loadThumbnails() }
         selectionChanged()
+    }
+
+    // MARK: Tabs
+
+    /// Opens the list on the tabs. The windows are only fetched if the user goes back to them.
+    private func presentTabs() {
+        guard AXIsProcessTrusted(), settings.tabsEnabled else { return }
+        session += 1
+        let current = session
+        let fresh = tabCache.flatMap { Date().timeIntervalSince($0.date) < 30 ? $0.snapshot : nil }
+        let windows = cache?.items ?? []
+        show(windows, byHold: false, mode: .tabs, tabs: fresh?.items ?? [])
+        if let fresh { model.replace(tabs: fresh.items, notices: fresh.notices) } else { model.setLoading(.tabs, true) }
+        if cache == nil { model.setLoading(.windows, true) }
+        refreshTabs(session: current)
+    }
+
+    /// From the windows to the tabs, keeping what was typed.
+    private func showTabs() {
+        guard isShown, settings.tabsEnabled, model.mode == .windows else { return }
+        // The key that was held to open the windows has nothing to do with the tabs.
+        openedByHold = false
+        model.dropReleaseKey()
+        if let cached = tabCache?.snapshot { model.replace(tabs: cached.items, notices: cached.notices) } else { model.setLoading(.tabs, true) }
+        model.setMode(.tabs)
+        selectionChanged()
+        refreshTabs(session: session)
+    }
+
+    private func switchMode() {
+        if model.mode == .windows { showTabs() } else { showWindows() }
+    }
+
+    /// From the tabs back to the windows.
+    private func showWindows() {
+        guard isShown, model.mode == .tabs else { return }
+        if let cache { model.replace(items: cache.items) } else { model.setLoading(.windows, true) }
+        model.setMode(.windows)
+        selectionChanged()
+        let current = session
+        Task { [weak self] in
+            guard let self else { return }
+            let items = await fetchSnapshot()
+            guard isShown, session == current else { return }
+            model.replace(items: items)
+            if model.showsPictures && !FinderDemo.isActive && model.thumbnails.isEmpty { loadThumbnails() }
+        }
+    }
+
+    /// Closes the chosen tab, takes it off the list at once and reads the tabs again a moment later,
+    /// because a page can refuse to close (it asks to confirm) and the list should show what really happened.
+    private func closeSelectedTab() {
+        guard let item = model.selected, item.tab != nil else { return }
+        BrowserTabs.close(item)
+        model.removeTab(id: item.id)
+        if let cached = tabCache {
+            var snapshot = cached.snapshot
+            snapshot.items.removeAll { $0.id == item.id }
+            tabCache = (snapshot, cached.date)
+        }
+        refreshTabs(session: session, after: 0.45)
+    }
+
+    private func refreshTabs(session current: Int, after delay: TimeInterval = 0) {
+        Task { [weak self] in
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            guard let self else { return }
+            let order = appOrder
+            let started = Date()
+            let snapshot = await BrowserTabs.snapshot(appOrder: order)
+            tabCache = (snapshot, Date())
+            FinderLog.shared.note(String(format: "listed %d tabs in %.0f ms", snapshot.items.count, Date().timeIntervalSince(started) * 1000))
+            guard isShown, session == current else { return }
+            model.replace(tabs: snapshot.items, notices: snapshot.notices)
+        }
     }
 
     private func makePanel() -> FinderPanel {
@@ -340,9 +466,9 @@ final class WindowFinder {
     private func commit(index: Int) {
         guard model.results.indices.contains(index) else { return close() }
         let item = model.results[index]
-        if settings.rememberChoices { history.record(query: model.query, item: item) }
+        if settings.rememberChoices { (item.tab != nil ? tabHistory : history).record(query: model.query, item: item) }
         close()
-        WindowActions.focus(item)
+        if item.tab != nil { BrowserTabs.switchTo(item) } else { WindowActions.focus(item) }
     }
 
     // MARK: Keys
@@ -359,7 +485,9 @@ final class WindowFinder {
         case 36, 76: // return, enter
             commit(index: model.selection)
             return true
-        case 48: model.move(flags.contains(.shift) ? -1 : 1); return true
+        case 48: // tab: between windows and tabs (one step through the list when tabs are off)
+            if settings.tabsEnabled { switchMode() } else { model.move(flags.contains(.shift) ? -1 : 1) }
+            return true
         case 123: model.move(-1); return true
         case 124: model.move(1); return true
         case 125: model.moveRow(1); return true
@@ -369,12 +497,21 @@ final class WindowFinder {
             if model.layout == .cards && model.query.isEmpty { model.togglePreview() } else if !model.query.isEmpty { model.type(" ") }
             return true
         case 51: // delete
-            if command { model.clearQuery() } else { model.backspace() }
+            if command {
+                model.clearQuery()
+            } else {
+                model.backspace()
+            }
             return true
         default: break
         }
 
         if command {
+            // In the tabs, ⌘W closes the tab; minimizing, quitting and hiding are for windows.
+            guard model.mode == .windows else {
+                if event.charactersIgnoringModifiers?.lowercased() == "w" { closeSelectedTab() }
+                return true
+            }
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "w": act(on: model.selected, removing: true, WindowActions.close)
             case "m": act(on: model.selected, removing: true, WindowActions.minimize)
@@ -452,7 +589,7 @@ final class WindowFinder {
     /// Asks for a larger picture of the selected window while the quick look is open.
     private func selectionChanged() {
         previewTask?.cancel()
-        guard isShown, !FinderDemo.isActive, model.isPreviewing || model.layout == .split, model.showsPictures, let windowID = model.selected?.windowID else { return }
+        guard isShown, !FinderDemo.isActive, model.mode == .windows, model.isPreviewing || model.layout == .split, model.showsPictures, let windowID = model.selected?.windowID else { return }
         model.setPreview(nil)
         let thumbnailer = self.thumbnailer
         previewTask = Task { [weak self] in

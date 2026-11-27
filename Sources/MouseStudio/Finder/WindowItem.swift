@@ -19,4 +19,11 @@ struct WindowItem: Identifiable, WindowSearchable, @unchecked Sendable {
     let icon: NSImage?
     /// Where it is, such as "Desktop 2"; nil when there is only one desktop.
     var place: String?
+    /// Set for a browser tab, which is listed like a window but is found and selected by the browser.
+    var tab: BrowserTab?
+}
+
+extension WindowItem {
+    /// The address of a tab, searched like the title.
+    var detail: String { tab?.address ?? "" }
 }

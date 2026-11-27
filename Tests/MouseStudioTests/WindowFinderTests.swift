@@ -253,3 +253,234 @@ struct FinderHistoryTests {
         #expect(WindowSearch.matchedPositions(in: "Safari", query: "").isEmpty)
     }
 }
+
+// MARK: - Browser tabs
+
+private func tab(
+    _ id: String, _ title: String, _ url: String, window: Int = 1, windows: Int = 2, index: Int = 1, active: Bool = false,
+    priv: Bool = false, name: String = "", browser: String = "Safari"
+) -> WindowItem {
+    var item = window_(id, browser, title)
+    item.tab = BrowserTab(
+        family: .chromium, windowID: 100 + window, windowNumber: window, windowCount: windows, windowName: name, windowTabCount: 3,
+        tabIndex: index, tabKey: id, url: url, isActive: active, isPrivate: priv
+    )
+    return item
+}
+
+private func window_(_ id: String, _ app: String, _ title: String) -> WindowItem {
+    WindowItem(id: id, pid: 1, windowID: nil, appName: app, bundleID: "com.google.Chrome", title: title, isMinimized: false,
+               isOnOtherSpace: false, isAppHidden: false, element: nil, size: nil, icon: nil)
+}
+
+@Suite("Browser tabs")
+struct BrowserTabParsingTests {
+    private let us = BrowserTabs.separatorField
+    private let rs = BrowserTabs.separatorRecord
+
+    @Test func readsWindowsAndTheirTabsInOrder() {
+        let text = ["W\(us)11\(us)2\(us)normal\(us)research",
+                    "T\(us)a\(us)First\(us)https://one.example/",
+                    "T\(us)b\(us)Second\(us)https://two.example/x",
+                    "W\(us)12\(us)1\(us)incognito\(us)",
+                    "T\(us)c\(us)Third\(us)about:blank"].joined(separator: rs)
+        let windows = BrowserTabs.parse(text)
+        #expect(windows.count == 2)
+        #expect(windows[0] == ParsedBrowserWindow(id: 11, activeIndex: 2, isPrivate: false, name: "research", tabs: [
+            ParsedBrowserTab(key: "a", title: "First", url: "https://one.example/"),
+            ParsedBrowserTab(key: "b", title: "Second", url: "https://two.example/x"),
+        ]))
+        #expect(windows[1].isPrivate)
+        #expect(windows[1].tabs.map(\.url) == ["about:blank"])
+    }
+
+    @Test func titlesWithNewlinesAndEmptyAnswersAreSafe() {
+        let text = "W\(us)1\(us)1\(us)normal\(us)\(rs)T\(us)k\(us)Two\nlines\(us)https://x.example"
+        #expect(BrowserTabs.parse(text)[0].tabs[0].title == "Two\nlines")
+        #expect(BrowserTabs.parse("").isEmpty)
+        // A tab before any window, and a short record, are ignored rather than crashing.
+        #expect(BrowserTabs.parse("T\(us)k\(us)x\(us)y\(rs)W\(us)1").isEmpty)
+    }
+
+    @Test func aTabKnowsItsSiteAndAddress() {
+        let info = tab("a", "Docs", "https://www.docs.google.com/spreadsheets/d/1/edit").tab!
+        #expect(info.host == "docs.google.com")
+        #expect(info.address == "www.docs.google.com/spreadsheets/d/1/edit")
+        #expect(tab("b", "Blank", "about:blank").tab!.host == "about:blank")
+    }
+
+    @Test func browsersAreToldApart() {
+        #expect(BrowserFamily.of(bundleID: "com.apple.Safari") == .safari)
+        #expect(BrowserFamily.of(bundleID: "com.google.Chrome") == .chromium)
+        #expect(BrowserFamily.of(bundleID: "com.microsoft.edgemac") == .chromium)
+        #expect(BrowserFamily.of(bundleID: "org.mozilla.firefox") == nil)
+        #expect(BrowserFamily.of(bundleID: nil) == nil)
+    }
+
+    @Test func scriptsCarryTheWindowTabAndEscapedAddress() {
+        let item = tab("77", "Quote", "https://x.example/?q=\"a\"\\b", window: 3, index: 4).tab!
+        let script = BrowserTabs.selectScript(family: .chromium, bundleID: "com.google.Chrome", tab: item)
+        #expect(script.contains("window id 103"))
+        #expect(script.contains("set idx to 4"))
+        #expect(script.contains("\"77\""))
+        let safari = BrowserTabs.selectScript(family: .safari, bundleID: "com.apple.Safari", tab: item)
+        #expect(safari.contains("https://x.example/?q=\\\"a\\\"\\\\b"))
+        let closing = BrowserTabs.selectScript(family: .chromium, bundleID: "com.google.Chrome", tab: item, closing: true)
+        #expect(closing.contains("if true then") && closing.contains("close tab idx of w"))
+        #expect(script.contains("if false then"))
+        #expect(BrowserTabs.listScript(family: .safari, bundleID: "com.apple.Safari").contains("current tab"))
+    }
+}
+
+@Suite("Tab search")
+struct TabSearchTests {
+    private let items = [
+        tab("a", "Sprint backlog", "https://docs.google.com/spreadsheets/d/1"),
+        tab("b", "Pull requests", "https://github.com/acme/app/pulls"),
+        tab("c", "Google Gemini", "https://gemini.google.com/app"),
+    ]
+
+    @Test func theAddressIsSearchedToo() {
+        #expect(WindowSearch.filter(items, query: "github").map(\.id) == ["b"])
+        #expect(WindowSearch.filter(items, query: "spreadsheets").map(\.id) == ["a"])
+    }
+
+    @Test func aTitleMatchRanksAboveAnAddressMatch() {
+        // "google" is in the title of c and only in the address of a.
+        #expect(WindowSearch.filter(items, query: "google").map(\.id) == ["c", "a"])
+    }
+
+    @Test func everyWordMustMatchTitleOrAddress() {
+        #expect(WindowSearch.filter(items, query: "sprint docs").map(\.id) == ["a"])
+        #expect(WindowSearch.filter(items, query: "sprint github").isEmpty)
+    }
+
+    @Test func tabsAreRememberedBySiteNotByTitle() {
+        let first = tab("a", "(3) Inbox", "https://mail.example.com/u/0")
+        let later = tab("b", "(9) Inbox", "https://mail.example.com/u/0")
+        #expect(FinderHistory.key(for: first) == FinderHistory.key(for: later))
+        #expect(FinderHistory.key(for: first) != FinderHistory.windowKey(bundleID: "com.google.Chrome", title: "(3) Inbox"))
+    }
+
+    @MainActor
+    @Test func whatIsPickedInAPrivateWindowIsNotWrittenDown() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("MouseStudioTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FinderHistoryStore(directory: directory, fileName: "tabs.json")
+        store.record(query: "mail", item: tab("p", "Secret", "https://private.example/", priv: true))
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("tabs.json").path))
+        store.record(query: "mail", item: tab("n", "Inbox", "https://mail.example/"))
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("tabs.json").path))
+        let boost = store.booster(query: "mail")
+        #expect(boost(tab("x", "Other title", "https://mail.example/")) > boost(tab("y", "Inbox", "https://other.example/")))
+    }
+}
+
+@Suite("Finder tabs list")
+@MainActor
+struct FinderTabsModelTests {
+    private func model(query: String = "") -> FinderModel {
+        let model = FinderModel()
+        let windows = [window("w1", "Safari", "Start"), window("w2", "Xcode", "AppModel")]
+        let tabs = [
+            tab("a", "Alpha", "https://a.example/", window: 1, index: 1),
+            tab("b", "Bravo", "https://b.example/", window: 1, index: 2, active: true),
+            tab("c", "Charlie", "https://c.example/", window: 2, index: 1, name: "research"),
+        ]
+        model.begin(items: windows, releaseKey: "⌥", showsPictures: false, layout: .cards, maxVisibleRows: 3, mode: .windows, tabs: tabs, maxListRows: 6)
+        if !query.isEmpty { model.type(query) }
+        return model
+    }
+
+    @Test func switchingKeepsWhatWasTypedAndSearchesTheOtherList() {
+        let model = model(query: "a")
+        #expect(model.results.allSatisfy { $0.tab == nil })
+        model.setMode(.tabs)
+        #expect(model.query == "a")
+        #expect(model.results.allSatisfy { $0.tab != nil })
+        model.setMode(.windows)
+        #expect(model.mode == .windows)
+        #expect(model.results.allSatisfy { $0.tab == nil })
+    }
+
+    @Test func tabsAlwaysUseTheListWithDetailsAndStartOnTheCurrentTab() {
+        let model = model()
+        #expect(model.activeLayout == .cards)
+        model.setMode(.tabs)
+        #expect(model.activeLayout == .split)
+        #expect(model.panelWidth == FinderMetrics.splitWidth)
+        #expect(model.selected?.id == "b")
+        model.togglePreview()
+        #expect(!model.isPreviewing)
+    }
+
+    @Test func eachBrowserWindowGetsAHeaderUntilSomethingIsTyped() {
+        let model = model()
+        model.setMode(.tabs)
+        #expect(Set(model.groupHeaders.keys) == ["a", "c"])
+        #expect(model.groupHeaders["a"]?.count == 2)
+        #expect(model.groupHeaders["a"]?.window == String(localized: "Window 1"))
+        #expect(model.groupHeaders["c"]?.name == "research")
+        model.type("alp")
+        #expect(model.groupHeaders.isEmpty)
+        #expect(model.results.map(\.id) == ["a"])
+        #expect(model.selection == 0)
+    }
+
+    @Test func tabsThatArriveLaterFillAnEmptyList() {
+        let model = FinderModel()
+        model.begin(items: [], releaseKey: nil, showsPictures: false, layout: .split, maxVisibleRows: 6, mode: .tabs)
+        model.setLoading(.tabs, true)
+        #expect(model.isLoading && model.results.isEmpty)
+        model.replace(tabs: [tab("a", "Alpha", "https://a.example/", active: true)], notices: [.needsAccess("Safari")])
+        #expect(!model.isLoading)
+        #expect(model.results.map(\.id) == ["a"])
+        #expect(model.tabNotices == [.needsAccess("Safari")])
+    }
+
+    @Test func aClosedTabLeavesTheListAndTheSelectionStaysNearby() {
+        let model = model()
+        model.setMode(.tabs)
+        model.removeTab(id: "b")
+        #expect(model.results.map(\.id) == ["a", "c"])
+        #expect(model.windowItems.count == 2)
+        #expect(model.selected != nil)
+        #expect(model.groupHeaders["a"]?.count == 1)
+    }
+
+    @Test func listsOfTheOtherKindDoNotDisturbTheOneShown() {
+        let model = model()
+        model.replace(tabs: [tab("z", "Zulu", "https://z.example/")], notices: [])
+        #expect(model.results.allSatisfy { $0.tab == nil })
+        model.setMode(.tabs)
+        #expect(model.results.map(\.id) == ["z"])
+    }
+}
+
+@Suite("Tab settings")
+struct TabSettingsTests {
+    @Test func olderSettingsFilesGetTabSearchSwitchedOn() throws {
+        let old = #"{"isEnabled": true, "key": "rightOption", "delay": 0.3}"#
+        let settings = try JSONDecoder().decode(WindowFinderSettings.self, from: Data(old.utf8))
+        #expect(settings.tabsEnabled)
+        #expect(settings.tabShortcut == nil)
+    }
+
+    @Test func theTwoShortcutsCannotBeTheSame() {
+        let combo = KeyCombo(keyCode: 44, modifiers: .option, keyLabel: "/")
+        var settings = WindowFinderSettings()
+        settings.shortcut = combo
+        settings.tabShortcut = combo
+        #expect(settings.clamped().tabShortcut == nil)
+        settings.tabShortcut = KeyCombo(keyCode: 17, modifiers: .option, keyLabel: "T")
+        #expect(settings.clamped().tabShortcut != nil)
+    }
+
+    @Test func settingsRoundTrip() throws {
+        var settings = WindowFinderSettings()
+        settings.tabsEnabled = false
+        settings.tabShortcut = KeyCombo(keyCode: 17, modifiers: [.option, .shift], keyLabel: "T")
+        let decoded = try JSONDecoder().decode(WindowFinderSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded == settings)
+    }
+}

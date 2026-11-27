@@ -4,6 +4,25 @@ import Foundation
 protocol WindowSearchable {
     var appName: String { get }
     var title: String { get }
+    /// More text to search, such as the address of a browser tab. Matches here rank below the title and the app.
+    var detail: String { get }
+}
+
+extension WindowSearchable {
+    var detail: String { "" }
+}
+
+/// The searched texts of one window, already folded, so typing doesn't fold them again for every key.
+struct FoldedWindow: Sendable {
+    let title: String
+    let app: String
+    let detail: String
+
+    init(_ item: some WindowSearchable) {
+        title = WindowSearch.normalize(item.title)
+        app = WindowSearch.normalize(item.appName)
+        detail = WindowSearch.normalize(item.detail)
+    }
 }
 
 /// Finds windows by what the user types: parts of the app name and the title, in any order, ignoring case and
@@ -16,16 +35,20 @@ enum WindowSearch {
     }
 
     /// `boost` adds to the score of a window that matched, for what the user has picked before.
-    static func filter<Item: WindowSearchable>(_ items: [Item], query: String, boost: (Item) -> Int = { _ in 0 }) -> [Item] {
+    static func filter<Item: WindowSearchable>(
+        _ items: [Item],
+        query: String,
+        folded: (Item) -> FoldedWindow = { FoldedWindow($0) },
+        boost: (Item) -> Int = { _ in 0 }
+    ) -> [Item] {
         let tokens = normalize(query).split(whereSeparator: \.isWhitespace).map(String.init)
         guard !tokens.isEmpty else { return items }
         var scored: [(index: Int, score: Int)] = []
         for (index, item) in items.enumerated() {
-            let title = normalize(item.title)
-            let app = normalize(item.appName)
+            let text = folded(item)
             var total = 0
             for token in tokens {
-                let score = score(token, title: title, app: app)
+                let score = score(token, title: text.title, app: text.app, detail: text.detail)
                 if score == 0 { total = 0; break }
                 total += score
             }
@@ -56,13 +79,18 @@ enum WindowSearch {
         return found
     }
 
-    private static func score(_ token: String, title: String, app: String) -> Int {
+    private static func score(_ token: String, title: String, app: String, detail: String) -> Int {
         if title.hasPrefix(token) { return 100 }
         if hasWordPrefix(title, token) { return 80 }
         if app.hasPrefix(token) { return 70 }
         if hasWordPrefix(app, token) { return 60 }
         if title.contains(token) { return 40 }
         if app.contains(token) { return 30 }
+        if !detail.isEmpty {
+            if detail.hasPrefix(token) { return 35 }
+            if hasWordPrefix(detail, token) { return 25 }
+            if detail.contains(token) { return 15 }
+        }
         if token.count >= 3, isSubsequence(token, of: app + " " + title) { return 5 }
         return 0
     }
